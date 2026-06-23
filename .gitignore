@@ -1,0 +1,6 @@
+# CPE local session data
+.cpeconvo
+.cpe.log
+
+# macOS metadata
+.DS_Store
