@@ -1,0 +1,12 @@
+- script authors get functions, lists, tuples, dicts, strings, ints, bools, `None`, modules, and whatever extra values the Go host exposes
+- No `class` statement, inheritance, methods, metaclasses, descriptors, `__dunder__` protocol, or user-defined operator overloads, annotations (like type annotations), or decorators
+- `Freeze()` makes a value and reachable contents immutable
+- Hosts choose when to freeze; Starlark scripts do not normally call it
+- Freeze cached module globals/shared constants; do not freeze active REPL/session state
+- Frozen lists/dicts/custom values reject mutation; immutable values are already safe
+- No `try`/`except`/`finally`, `raise`, or custom exception classes
+- Evaluation errors abort execution; Go host receives `*starlark.EvalError`
+- Use `EvalError.Backtrace()` for script stack traces
+- Exposed builtins should return data for expected failures, errors for programmer/policy/unrecoverable failures
+- Avoid error-as-control-flow APIs; make common failure states inspectable in Starlark
+
