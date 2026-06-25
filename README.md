@@ -8,4 +8,8 @@ TBD
 
 # Python Stdlib compatibility
 
-TBD
+Dyson exposes loadable compatibility modules through `dyson.Load`, a `starlark.Thread.Load` implementation:
+
+```go
+thread := &starlark.Thread{Load: dyson.Load}
+```
