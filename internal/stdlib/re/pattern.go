@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spachava753/dyson/internal/xctx"
 	"go.starlark.net/starlark"
 )
 
@@ -56,6 +57,9 @@ func (p *patternValue) method(name string) func(*starlark.Thread, *starlark.Buil
 			if err != nil {
 				return nil, err
 			}
+			if err := xctx.Check(thread); err != nil {
+				return nil, err
+			}
 			switch name {
 			case "search":
 				return p.search(text, pos, endpos), nil
@@ -69,16 +73,22 @@ func (p *patternValue) method(name string) func(*starlark.Thread, *starlark.Buil
 			if err != nil {
 				return nil, err
 			}
-			return p.split(text, maxsplit), nil
+			if err := xctx.Check(thread); err != nil {
+				return nil, err
+			}
+			return p.split(thread, text, maxsplit)
 		case "findall", "finditer":
 			text, pos, endpos, err := unpackPatternMethodArgs(fn.Name(), args, kwargs)
 			if err != nil {
 				return nil, err
 			}
-			if name == "findall" {
-				return p.findall(text.window(pos, endpos)), nil
+			if err := xctx.Check(thread); err != nil {
+				return nil, err
 			}
-			return p.finditer(text, pos, endpos), nil
+			if name == "findall" {
+				return p.findall(thread, text.window(pos, endpos))
+			}
+			return p.finditer(thread, text, pos, endpos)
 		case "sub", "subn":
 			repl, text, count, err := unpackPatternSubArgs(fn.Name(), args, kwargs)
 			if err != nil {
@@ -144,12 +154,15 @@ func (p *patternValue) fullmatch(text regexText, pos, endpos int) starlark.Value
 //
 // It mirrors the supported subset of Python's Pattern.split:
 // https://docs.python.org/3/library/re.html#re.Pattern.split
-func (p *patternValue) split(text regexText, maxsplit int) *starlark.List {
+func (p *patternValue) split(thread *starlark.Thread, text regexText, maxsplit int) (*starlark.List, error) {
 	matches := p.re.FindAllStringSubmatchIndex(text.text, -1)
 	items := []starlark.Value{}
 	last := 0
 	splits := 0
 	for _, index := range matches {
+		if err := xctx.Check(thread); err != nil {
+			return nil, err
+		}
 		if maxsplit > 0 && splits >= maxsplit {
 			break
 		}
@@ -166,7 +179,7 @@ func (p *patternValue) split(text regexText, maxsplit int) *starlark.List {
 		splits++
 	}
 	items = append(items, text.starlarkValue(text.text[last:]))
-	return starlark.NewList(items)
+	return starlark.NewList(items), nil
 }
 
 // findall implements Pattern.findall, returning all non-overlapping matches as
@@ -174,10 +187,13 @@ func (p *patternValue) split(text regexText, maxsplit int) *starlark.List {
 //
 // It mirrors the supported subset of Python's Pattern.findall:
 // https://docs.python.org/3/library/re.html#re.Pattern.findall
-func (p *patternValue) findall(text regexText) *starlark.List {
+func (p *patternValue) findall(thread *starlark.Thread, text regexText) (*starlark.List, error) {
 	matches := p.re.FindAllStringSubmatchIndex(text.text, -1)
 	items := make([]starlark.Value, 0, len(matches))
 	for _, index := range matches {
+		if err := xctx.Check(thread); err != nil {
+			return nil, err
+		}
 		switch p.groups {
 		case 0:
 			items = append(items, text.starlarkValue(text.text[index[0]:index[1]]))
@@ -201,7 +217,7 @@ func (p *patternValue) findall(text regexText) *starlark.List {
 			items = append(items, groups)
 		}
 	}
-	return starlark.NewList(items)
+	return starlark.NewList(items), nil
 }
 
 // finditer implements Pattern.finditer. Dyson returns a list of Match values
@@ -212,15 +228,18 @@ func (p *patternValue) findall(text regexText) *starlark.List {
 //
 // It mirrors the supported subset of Python's Pattern.finditer:
 // https://docs.python.org/3/library/re.html#re.Pattern.finditer
-func (p *patternValue) finditer(text regexText, pos, endpos int) *starlark.List {
+func (p *patternValue) finditer(thread *starlark.Thread, text regexText, pos, endpos int) (*starlark.List, error) {
 	window := text.window(pos, endpos)
 	matches := p.re.FindAllStringSubmatchIndex(window.text, -1)
 	items := make([]starlark.Value, 0, len(matches))
 	for _, index := range matches {
+		if err := xctx.Check(thread); err != nil {
+			return nil, err
+		}
 		shiftIndex(index, window.offset)
 		items = append(items, &matchValue{pattern: p, input: window, pos: pos, endpos: endpos, index: index})
 	}
-	return starlark.NewList(items)
+	return starlark.NewList(items), nil
 }
 
 // sub implements Pattern.sub and the shared replacement work for Pattern.subn,
@@ -236,6 +255,9 @@ func (p *patternValue) sub(thread *starlark.Thread, repl starlark.Value, text re
 	var out strings.Builder
 	last := 0
 	for _, index := range matches {
+		if err := xctx.Check(thread); err != nil {
+			return nil, 0, err
+		}
 		out.WriteString(text.text[last:index[0]])
 		match := &matchValue{pattern: p, input: text, endpos: len(text.text), index: index}
 		if callable, ok := repl.(starlark.Callable); ok {

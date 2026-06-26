@@ -3,6 +3,7 @@ package re
 import (
 	"fmt"
 
+	"github.com/spachava753/dyson/internal/xctx"
 	"go.starlark.net/starlark"
 )
 
@@ -70,6 +71,9 @@ func (m *matchValue) method(name string) func(*starlark.Thread, *starlark.Builti
 			if err != nil {
 				return nil, err
 			}
+			if err := xctx.Check(thread); err != nil {
+				return nil, err
+			}
 			return template.starlarkValue(expandReplacement(template.text, m)), nil
 		case "group":
 			if len(args) == 0 && len(kwargs) == 0 {
@@ -80,6 +84,9 @@ func (m *matchValue) method(name string) func(*starlark.Thread, *starlark.Builti
 			}
 			values := make(starlark.Tuple, len(args))
 			for i, arg := range args {
+				if err := xctx.Check(thread); err != nil {
+					return nil, err
+				}
 				group, err := m.groupByValue(arg)
 				if err != nil {
 					return nil, err
@@ -97,6 +104,9 @@ func (m *matchValue) method(name string) func(*starlark.Thread, *starlark.Builti
 			}
 			items := make(starlark.Tuple, m.pattern.groups)
 			for group := 1; group <= m.pattern.groups; group++ {
+				if err := xctx.Check(thread); err != nil {
+					return nil, err
+				}
 				value, _ := m.group(group)
 				if value == starlark.None {
 					value = defaultValue
@@ -111,6 +121,9 @@ func (m *matchValue) method(name string) func(*starlark.Thread, *starlark.Builti
 			}
 			dict := starlark.NewDict(m.pattern.groupIndex.Len())
 			for i, name := range m.pattern.groupNames {
+				if err := xctx.Check(thread); err != nil {
+					return nil, err
+				}
 				if i == 0 || name == "" {
 					continue
 				}
