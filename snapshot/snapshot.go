@@ -50,6 +50,7 @@ const (
 	objectKindInvalid objectType = iota
 	objectKindList
 	objectKindDict
+	objectKindSet
 )
 
 type objectEntry struct {
@@ -78,4 +79,5 @@ const (
 	valueTypeString
 	valueTypeTuple
 	valueTypeRef
+	valueTypeBytes
 )

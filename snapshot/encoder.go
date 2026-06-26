@@ -16,10 +16,11 @@ type Encoder struct {
 	nextID int
 
 	// Mutable Starlark containers form a graph, not a tree: multiple globals may
-	// point at the same list/dict, and containers may even contain themselves.
+	// point at the same list/dict/set, and containers may even contain themselves.
 	// Object ids let refs preserve that aliasing and avoid recursive cycles.
 	lists   map[*starlark.List]int
 	dicts   map[*starlark.Dict]int
+	sets    map[*starlark.Set]int
 	objects map[int]object
 }
 
@@ -53,6 +54,7 @@ func (e *Encoder) reset() {
 	e.nextID = 0
 	e.lists = map[*starlark.List]int{}
 	e.dicts = map[*starlark.Dict]int{}
+	e.sets = map[*starlark.Set]int{}
 	e.objects = map[int]object{}
 }
 
@@ -60,6 +62,7 @@ func (e *Encoder) clear() {
 	e.nextID = 0
 	e.lists = nil
 	e.dicts = nil
+	e.sets = nil
 	e.objects = nil
 }
 
@@ -92,6 +95,8 @@ func (e *Encoder) encode(value starlark.Value) (snapshotValue, error) {
 		return snapshotValue{Kind: valueTypeFloat, Float: float64(value)}, nil
 	case starlark.String:
 		return snapshotValue{Kind: valueTypeString, Text: string(value)}, nil
+	case starlark.Bytes:
+		return snapshotValue{Kind: valueTypeBytes, Text: string(value)}, nil
 	case starlark.Tuple:
 		items, err := e.encodeTuple(value)
 		if err != nil {
@@ -102,6 +107,8 @@ func (e *Encoder) encode(value starlark.Value) (snapshotValue, error) {
 		return e.encodeList(value)
 	case *starlark.Dict:
 		return e.encodeDict(value)
+	case *starlark.Set:
+		return e.encodeSet(value)
 	default:
 		return snapshotValue{}, fmt.Errorf("unsupported value type %s (%T)", value.Type(), value)
 	}
@@ -162,6 +169,27 @@ func (e *Encoder) encodeDict(dict *starlark.Dict) (snapshotValue, error) {
 		entries = append(entries, objectEntry{Key: encodedKey, Value: encodedEntryValue})
 	}
 	e.objects[id] = object{Kind: objectKindDict, Entries: entries}
+	return snapshotValue{Kind: valueTypeRef, Ref: id}, nil
+}
+
+func (e *Encoder) encodeSet(set *starlark.Set) (snapshotValue, error) {
+	if id, ok := e.sets[set]; ok {
+		return snapshotValue{Kind: valueTypeRef, Ref: id}, nil
+	}
+
+	id := e.nextObjectID()
+	e.sets[set] = id
+	e.objects[id] = object{Kind: objectKindSet}
+
+	items := make([]snapshotValue, 0, set.Len())
+	for item := range set.Elements() {
+		encoded, err := e.encode(item)
+		if err != nil {
+			return snapshotValue{}, err
+		}
+		items = append(items, encoded)
+	}
+	e.objects[id] = object{Kind: objectKindSet, Items: items}
 	return snapshotValue{Kind: valueTypeRef, Ref: id}, nil
 }
 

@@ -72,6 +72,8 @@ func (d *Decoder) decode(value snapshotValue) (starlark.Value, error) {
 		decoded = starlark.Float(value.Float)
 	case valueTypeString:
 		decoded = starlark.String(value.Text)
+	case valueTypeBytes:
+		decoded = starlark.Bytes(value.Text)
 	case valueTypeTuple:
 		items := make([]starlark.Value, 0, len(value.Items))
 		for _, item := range value.Items {
@@ -147,6 +149,19 @@ func (d *Decoder) decodeObject(id int) (starlark.Value, error) {
 			}
 		}
 		return dict, nil
+	case objectKindSet:
+		set := starlark.NewSet(len(object.Items))
+		d.values[id] = set
+		for _, item := range object.Items {
+			decoded, err := d.decode(item)
+			if err != nil {
+				return nil, err
+			}
+			if err := set.Insert(decoded); err != nil {
+				return nil, err
+			}
+		}
+		return set, nil
 	default:
 		return nil, fmt.Errorf("unknown object kind %d", object.Kind)
 	}

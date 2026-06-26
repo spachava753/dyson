@@ -26,7 +26,7 @@ The root `dyson.Load` function returns only the namespace symbol for stdlib modu
 
 ## Snapshot Compatibility
 
-Durable values returned into user globals should be plain snapshot-supported Starlark values whenever possible: `None`, bool, int, float, string, tuple, list, and dict.
+Durable values returned into user globals should be plain snapshot-supported Starlark values whenever possible: `None`, bool, int, float, string, bytes, tuple, list, dict, and set.
 
 Custom `starlark.Value` implementations are allowed for real module-defined types, but every production custom value returned to Starlark must implement `snapshot.Converter` and the module must register a matching `snapshot.RegisterRestorer` hook. The converter payload should use only snapshot-supported values, and tests should prove the custom value round-trips through `snapshot.NewEncoder` / `snapshot.NewDecoder`.
 

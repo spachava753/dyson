@@ -19,6 +19,7 @@ func TestREPLSnapshotRestoresGlobalsOnNewThread(t *testing.T) {
 
 	runREPLCell(t, opts, thread, globals, `counter = 1`)
 	runREPLCell(t, opts, thread, globals, `items = ["first"]`)
+	runREPLCell(t, opts, thread, globals, `payload = b"abc"`)
 	runREPLCell(t, opts, thread, globals, `alias = items`)
 	runREPLCell(t, opts, thread, globals, `state = {"counter": counter, "items": items}`)
 
@@ -38,8 +39,35 @@ func TestREPLSnapshotRestoresGlobalsOnNewThread(t *testing.T) {
 
 	assertEvalTrue(t, opts, restoredThread, restoredGlobals, `counter == 42`)
 	assertEvalTrue(t, opts, restoredThread, restoredGlobals, `items == ["first", "second", "third"]`)
+	assertEvalTrue(t, opts, restoredThread, restoredGlobals, `payload == b"abc"`)
 	assertEvalTrue(t, opts, restoredThread, restoredGlobals, `alias == items`)
 	assertEvalTrue(t, opts, restoredThread, restoredGlobals, `state == {"counter": 42, "items": ["first", "second", "third"]}`)
+}
+
+func TestREPLSnapshotRestoresSets(t *testing.T) {
+	opts := &syntax.FileOptions{Set: true, GlobalReassign: true}
+	globals := starlark.StringDict{}
+	thread := newTestREPLThread("first")
+
+	runREPLCell(t, opts, thread, globals, `tags = set(["first", b"raw"])`)
+	runREPLCell(t, opts, thread, globals, `alias = tags`)
+	runREPLCell(t, opts, thread, globals, `state = {"tags": tags}`)
+
+	var buf bytes.Buffer
+	be.Err(t, NewEncoder(&buf).Encode(globals), nil)
+	snapshot := buf.Bytes()
+	be.True(t, json.Valid(snapshot))
+
+	var restoredGlobals starlark.StringDict
+	be.Err(t, NewDecoder(bytes.NewReader(snapshot)).Decode(&restoredGlobals), nil)
+	restoredThread := newTestREPLThread("restored")
+
+	runREPLCell(t, opts, restoredThread, restoredGlobals, `alias.add("second")`)
+	runREPLCell(t, opts, restoredThread, restoredGlobals, `state["tags"].add("third")`)
+
+	assertEvalTrue(t, opts, restoredThread, restoredGlobals, `tags == set(["first", "second", "third", b"raw"])`)
+	assertEvalTrue(t, opts, restoredThread, restoredGlobals, `alias == tags`)
+	assertEvalTrue(t, opts, restoredThread, restoredGlobals, `state["tags"] == tags`)
 }
 
 func TestEncoderRejectsInvalidGlobals(t *testing.T) {
