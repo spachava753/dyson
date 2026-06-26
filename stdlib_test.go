@@ -16,6 +16,20 @@ func TestLoadStdlibModule(t *testing.T) {
 	be.True(t, globals["I"] == nil)
 }
 
+func TestLoadTimeStdlibModule(t *testing.T) {
+	globals, err := Load(&starlark.Thread{Name: "test"}, "time.star")
+	be.Err(t, err, nil)
+	be.True(t, globals["time"] != nil)
+	be.True(t, globals["sleep"] == nil)
+}
+
+func TestLoadOSStdlibModule(t *testing.T) {
+	globals, err := Load(&starlark.Thread{Name: "test"}, "os.star")
+	be.Err(t, err, nil)
+	be.True(t, globals["os"] != nil)
+	be.True(t, globals["getcwd"] == nil)
+}
+
 func TestLoadStdlibModuleRejectsDirectModuleName(t *testing.T) {
 	_, err := Load(&starlark.Thread{Name: "test"}, "re")
 	be.Err(t, err, `unknown stdlib module "re"`)

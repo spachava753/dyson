@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/nalgeon/be"
+	"github.com/spachava753/dyson/internal/chunkedfile"
 	"github.com/spachava753/dyson/internal/xctx"
 	"github.com/spachava753/dyson/snapshot"
 	"go.starlark.net/starlark"
@@ -35,18 +33,14 @@ func TestLoadModuleShape(t *testing.T) {
 
 func TestReTestdata(t *testing.T) {
 	filename := filepath.Join("testdata", "re.star")
-	src, err := os.ReadFile(filename)
-	be.Err(t, err, nil)
-
-	for _, chunk := range splitChunks(string(src)) {
-		t.Run(chunk.name, func(t *testing.T) {
+	for i, chunk := range chunkedfile.Read(filename, t) {
+		t.Run(fmt.Sprintf("chunk_%02d", i+1), func(t *testing.T) {
 			thread := newTestThread(t)
-			_, err := starlark.ExecFileOptions(&syntax.FileOptions{}, thread, filename, chunk.source, nil)
-			if chunk.wantErr == "" {
-				be.Err(t, err, nil)
-				return
+			_, err := starlark.ExecFileOptions(&syntax.FileOptions{}, thread, filename, chunk.Source, nil)
+			if err != nil {
+				chunk.GotErrorAnyLine(err.Error())
 			}
-			be.Err(t, err, chunk.wantErr)
+			chunk.Done()
 		})
 	}
 }
@@ -127,51 +121,6 @@ match = re.search("(?P<word>[a-z]+)-(\\d+)", "xx abc-123 yy")
 	spanValue, err := starlark.Call(&starlark.Thread{Name: "test"}, span, nil, nil)
 	be.Err(t, err, nil)
 	be.Equal(t, spanValue, starlark.Value(starlark.Tuple{starlark.MakeInt(3), starlark.MakeInt(10)}))
-}
-
-func splitChunks(src string) []testChunk {
-	parts := strings.Split(src, "\n---\n")
-	chunks := make([]testChunk, 0, len(parts))
-	for i, part := range parts {
-		part = strings.TrimSpace(part) + "\n"
-		chunks = append(chunks, testChunk{
-			name:    fmt.Sprintf("chunk_%02d", i+1),
-			source:  stripErrorExpectations(part),
-			wantErr: errorExpectation(part),
-		})
-	}
-	return chunks
-}
-
-type testChunk struct {
-	name    string
-	source  string
-	wantErr string
-}
-
-func stripErrorExpectations(src string) string {
-	lines := strings.Split(src, "\n")
-	for i, line := range lines {
-		if before, _, ok := strings.Cut(line, "###"); ok {
-			lines[i] = strings.TrimRight(before, " \t")
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func errorExpectation(src string) string {
-	for _, line := range strings.Split(src, "\n") {
-		_, after, ok := strings.Cut(line, "###")
-		if !ok {
-			continue
-		}
-		want, err := strconv.Unquote(strings.TrimSpace(after))
-		if err != nil {
-			return strings.TrimSpace(after)
-		}
-		return want
-	}
-	return ""
 }
 
 func newTestThread(t *testing.T) *starlark.Thread {

@@ -45,13 +45,17 @@ For future APIs where failures are expected and recoverable, prefer explicit dat
 Keep module API-surface tests in the module package. Tests should verify:
 
 - `LoadModule` returns the `{ModuleName: *starlarkstruct.Module}` shape.
-- Scripts load symbols with `load("module", "symbol")`.
+- Scripts load symbols with namespace-only imports such as `load("re.star", "re")`.
 - Exported constants and aliases have compatibility-visible values.
-- Scaffolded or unsupported operations abort with stable module-qualified messages.
+- Intentionally unsupported operations abort with stable module-qualified messages.
 - Any durable values returned by module APIs can round-trip through the root snapshot encoder when relevant.
 
-Prefer Starlark testdata for module behavior. Put user-visible compatibility scenarios in `internal/stdlib/<name>/testdata/*.star` and execute them from a small Go harness in the module package. Keep Go assertions for host integration details that are awkward to express in Starlark, such as `LoadModule` shape, snapshot encoder/decoder integration, or low-level Go type checks.
+Prefer Starlark testdata for module behavior. Put user-visible compatibility scenarios in `internal/stdlib/<name>/testdata/*.star` and execute them from a small Go harness in the module package. Keep Go assertions for host integration details that are awkward to express in Starlark, such as `LoadModule` shape, snapshot encoder/decoder integration, deterministic fake-time setup, or low-level Go type checks.
 
-Use focused chunks separated by `---` for Starlark testdata. Each chunk should cover one behavior area and include short comments explaining what is being verified. Use `go.starlark.net/starlarktest`'s `assert.star` helpers for in-script assertions, and prefer inline expected-error annotations such as `### "module.fn: message"` for failure cases when the local harness supports them.
+Write behavior tests for the desired API, not for temporary scaffold behavior. When adding a new module, it is correct and expected for broad compatibility testdata to be red until the implementation catches up. Do not make tests pass by asserting generic placeholder errors such as `"module.fn: not implemented"` for APIs that are intended to be implemented. Only assert error behavior in testdata when the error is the intended public contract, such as an explicitly unsupported Python feature, invalid argument validation, platform/policy limitation, or resource/cancellation failure.
+
+Use focused chunks separated by `---` for Starlark testdata. Each chunk should cover one behavior area and include short comments explaining what is being verified. Use `go.starlark.net/starlarktest`'s `assert.star` helpers for in-script assertions, and prefer inline expected-error annotations such as `### "module.fn: message"` for intended failure cases when the local harness supports them.
 
 When adding broad compatibility for a module, favor many small Starlark examples over one large script that sets globals for Go to inspect. The test should read like executable documentation of the supported compatibility surface and its intentional divergences.
+
+For APIs involving clocks, timers, sleeps, timeouts, or concurrent blocking, consider using Go's `testing/synctest` in the Go harness. Inside a synctest bubble, the standard `time` package uses deterministic fake time starting at `2000-01-01 00:00:00 UTC`; fake time advances only when goroutines are durably blocked. This is ideal for asserting exact behavior for wall-clock, monotonic, perf-counter, and sleep APIs without weakening tests around real time.

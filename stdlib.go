@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"sync"
 
+	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
 	stdlibre "github.com/spachava753/dyson/internal/stdlib/re"
+	stdlibtime "github.com/spachava753/dyson/internal/stdlib/time"
 	"go.starlark.net/starlark"
 )
 
@@ -12,7 +14,9 @@ type moduleLoader func() (starlark.StringDict, error)
 
 var stdlibModules = sync.OnceValue(func() map[string]moduleLoader {
 	return map[string]moduleLoader{
-		stdlibre.ModuleName + ".star": stdlibre.LoadModule,
+		stdlibos.ModuleName + ".star":   stdlibos.LoadModule,
+		stdlibre.ModuleName + ".star":   stdlibre.LoadModule,
+		stdlibtime.ModuleName + ".star": stdlibtime.LoadModule,
 	}
 })
 
