@@ -15,16 +15,14 @@ This directory contains loadable Starlark standard-library compatibility modules
 
 ## Load Semantics
 
-Go Starlark `load` imports named symbols; bare `load("re")` is invalid.
-
-The root `dyson.Load` function unwraps a module dict shaped as `{name: *starlarkstruct.Module}` and returns the module members to the interpreter. User-facing examples should therefore prefer direct imports:
+Go Starlark `load` imports named symbols; bare `load("re.star")` is invalid. For Python-like namespacing, expose the module namespace as a symbol and import it explicitly:
 
 ```python
-load("re", "compile", "I", "M")
-pattern = compile("[a-z]+", I | M)
+load("re.star", "re")
+pattern = re.compile("[a-z]+", re.I | re.M)
 ```
 
-Do not design examples around `load("re", "re")` unless there is a deliberate reason to expose a module namespace as a symbol.
+The root `dyson.Load` function returns only the namespace symbol for stdlib modules. Direct member imports such as `load("re.star", "compile")` are intentionally unsupported.
 
 ## Snapshot Compatibility
 

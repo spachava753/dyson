@@ -6,14 +6,13 @@ import (
 
 	stdlibre "github.com/spachava753/dyson/internal/stdlib/re"
 	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 )
 
 type moduleLoader func() (starlark.StringDict, error)
 
 var stdlibModules = sync.OnceValue(func() map[string]moduleLoader {
 	return map[string]moduleLoader{
-		stdlibre.ModuleName: stdlibre.LoadModule,
+		stdlibre.ModuleName + ".star": stdlibre.LoadModule,
 	}
 })
 
@@ -31,13 +30,6 @@ func Load(thread *starlark.Thread, module string) (starlark.StringDict, error) {
 	globals, err := loader()
 	if err != nil {
 		return nil, err
-	}
-	if len(globals) == 1 {
-		if value, ok := globals[module]; ok {
-			if moduleValue, ok := value.(*starlarkstruct.Module); ok && moduleValue != nil {
-				return moduleValue.Members, nil
-			}
-		}
 	}
 	return globals, nil
 }

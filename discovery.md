@@ -6,7 +6,7 @@
 - Frozen lists/dicts/custom values reject mutation; immutable values are already safe
 - No `try`/`except`/`finally`, `raise`, or custom exception classes
 - Starlark file top levels do not allow `if` statements; assert behavior from Go tests or inside helper functions
-- A `load` statement imports named globals from the host-provided module environment; bare `load("re")` is invalid, so expose module members for direct imports like `load("re", "compile")`
+- A `load` statement imports named globals from the host-provided module environment; bare `load("re.star")` is invalid, so use explicit namespace imports like `load("re.star", "re")`; direct imports like `load("re.star", "compile")` are intentionally unsupported
 - Evaluation errors abort execution; Go host receives `*starlark.EvalError`
 - Use `EvalError.Backtrace()` for script stack traces
 - Exposed builtins should return data for expected failures, errors for programmer/policy/unrecoverable failures

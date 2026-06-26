@@ -1,6 +1,7 @@
 package re
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/nalgeon/be"
+	"github.com/spachava753/dyson/snapshot"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/starlarktest"
@@ -45,6 +47,51 @@ func TestReTestdata(t *testing.T) {
 			be.Err(t, err, chunk.wantErr)
 		})
 	}
+}
+
+func TestPatternCanBeSnapshotted(t *testing.T) {
+	globals, err := starlark.ExecFileOptions(&syntax.FileOptions{}, newTestThread(t), "test.star", `
+load("re.star", "re")
+pattern = re.compile("x", re.I)
+`, nil)
+	be.Err(t, err, nil)
+
+	var buf bytes.Buffer
+	be.Err(t, snapshot.NewEncoder(&buf).Encode(starlark.StringDict{"pattern": globals["pattern"]}), nil)
+
+	var restored starlark.StringDict
+	be.Err(t, snapshot.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&restored), nil)
+
+	pattern, ok := restored["pattern"].(starlark.HasAttrs)
+	be.True(t, ok)
+	patternText, err := pattern.Attr("pattern")
+	be.Err(t, err, nil)
+	be.Equal(t, patternText, starlark.Value(starlark.String("x")))
+	flags, err := pattern.Attr("flags")
+	be.Err(t, err, nil)
+	be.Equal(t, flags, starlark.Value(starlark.MakeInt(2)))
+}
+
+func TestMatchCanBeSnapshotted(t *testing.T) {
+	globals, err := starlark.ExecFileOptions(&syntax.FileOptions{}, newTestThread(t), "test.star", `
+load("re.star", "re")
+match = re.search("(?P<word>[a-z]+)-(\\d+)", "xx abc-123 yy")
+`, nil)
+	be.Err(t, err, nil)
+
+	var buf bytes.Buffer
+	be.Err(t, snapshot.NewEncoder(&buf).Encode(starlark.StringDict{"match": globals["match"]}), nil)
+
+	var restored starlark.StringDict
+	be.Err(t, snapshot.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&restored), nil)
+
+	match, ok := restored["match"].(starlark.HasAttrs)
+	be.True(t, ok)
+	span, err := match.Attr("span")
+	be.Err(t, err, nil)
+	spanValue, err := starlark.Call(&starlark.Thread{Name: "test"}, span, nil, nil)
+	be.Err(t, err, nil)
+	be.Equal(t, spanValue, starlark.Value(starlark.Tuple{starlark.MakeInt(3), starlark.MakeInt(10)}))
 }
 
 func splitChunks(src string) []testChunk {
@@ -97,17 +144,8 @@ func newTestThread(t *testing.T) *starlark.Thread {
 		Name: "test",
 		Load: func(thread *starlark.Thread, name string) (starlark.StringDict, error) {
 			switch name {
-			case ModuleName:
-				module, err := LoadModule()
-				if err != nil {
-					return nil, err
-				}
-				value := module[ModuleName]
-				moduleValue, ok := value.(*starlarkstruct.Module)
-				if !ok || moduleValue == nil {
-					return nil, fmt.Errorf("module %q did not load as a Starlark module", name)
-				}
-				return moduleValue.Members, nil
+			case ModuleName + ".star":
+				return LoadModule()
 			case "assert.star":
 				return starlarktest.LoadAssertModule()
 			default:

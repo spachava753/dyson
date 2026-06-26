@@ -1,6 +1,17 @@
 // Package re implements Dyson's Starlark compatibility subset of Python's re
 // module.
 //
+// # Loading
+//
+// In user code, import the module namespace explicitly:
+//
+//	load("re.star", "re")
+//	match = re.search("\\d+", "order 98765")
+//
+// Go Starlark does not support bare load("re.star"); the namespace symbol must
+// be named in the load statement. Direct symbol imports such as
+// load("re.star", "search", "I") are intentionally unsupported.
+//
 // # Supported API
 //
 // The module supports the common Python re workflows built around module-level
