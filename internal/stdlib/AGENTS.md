@@ -4,8 +4,6 @@ This directory contains loadable Starlark standard-library compatibility modules
 
 ## Module Shape
 
-Follow the Starlet `lib/csv` pattern for new modules:
-
 - Put each module in its own package under `internal/stdlib/<name>`.
 - Export `const ModuleName = "<name>"`.
 - Export `func LoadModule() (starlark.StringDict, error)`.
@@ -40,13 +38,13 @@ Host functions are necessarily `*starlark.Builtin`; these should generally live 
 
 Starlark has no Python exceptions. For scaffolded or unsupported operations, return a Go error with a clear module-qualified message, which aborts evaluation in the same way as Starlark `fail`.
 
-For future APIs where failures are expected and recoverable, prefer explicit data-returning variants such as Starlet's `try_*` convention: `(value, None)` on success and `(None, "error message")` on failure.
+For future APIs where failures are expected and recoverable, prefer explicit data-returning variants such as `try_*` convention: `(value, None)` on success and `(None, "error message")` on failure.
 
 ## Tests
 
 Keep module API-surface tests in the module package. Tests should verify:
 
-- `LoadModule` returns the Starlet-style `{ModuleName: *starlarkstruct.Module}` shape.
+- `LoadModule` returns the `{ModuleName: *starlarkstruct.Module}` shape.
 - Scripts load symbols with `load("module", "symbol")`.
 - Exported constants and aliases have compatibility-visible values.
 - Scaffolded operations abort with stable module-qualified messages.
