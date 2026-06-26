@@ -1,11 +1,10 @@
-package dyson
+package snapshot
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
-	"math/big"
 
 	"go.starlark.net/starlark"
 )
@@ -64,99 +63,21 @@ func (e *Encoder) clear() {
 	e.objects = nil
 }
 
-// Decoder reads snapshots of supported Starlark global values.
-type Decoder struct {
-	json *json.Decoder
-
-	snapshot snapshot
-	values   map[int]starlark.Value
-}
-
-// NewDecoder returns a new snapshot decoder that reads from r.
-func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{json: json.NewDecoder(r)}
-}
-
-// Decode reads one JSON snapshot into globals.
-func (d *Decoder) Decode(globals *starlark.StringDict) error {
-	if globals == nil {
-		return fmt.Errorf("decode globals: nil target")
-	}
-
-	var snap snapshot
-	if err := d.json.Decode(&snap); err != nil {
-		return err
-	}
-
-	d.snapshot = snap
-	d.values = map[int]starlark.Value{}
-	defer d.reset()
-
-	restored := starlark.StringDict{}
-	for name, encoded := range snap.Globals {
-		value, err := d.decode(encoded)
-		if err != nil {
-			return fmt.Errorf("decode global %s: %w", name, err)
-		}
-		restored[name] = value
-	}
-
-	*globals = restored
-	return nil
-}
-
-func (d *Decoder) reset() {
-	d.snapshot = snapshot{}
-	d.values = nil
-}
-
-type snapshot struct {
-	Globals map[string]snapshotValue `json:"globals"`
-	Objects map[int]object           `json:"objects,omitempty"`
-}
-
-type object struct {
-	Kind    objectType      `json:"kind"`
-	Items   []snapshotValue `json:"items,omitempty"`
-	Entries []objectEntry   `json:"entries,omitempty"`
-}
-
-type objectType uint8
-
-const (
-	objectKindInvalid objectType = iota
-	objectKindList
-	objectKindDict
-)
-
-type objectEntry struct {
-	Key   snapshotValue `json:"key"`
-	Value snapshotValue `json:"value"`
-}
-
-type snapshotValue struct {
-	Kind  valueType       `json:"kind"`
-	Ref   int             `json:"ref,omitempty"`
-	Bool  bool            `json:"bool,omitempty"`
-	Float float64         `json:"float,omitempty"`
-	Text  string          `json:"text,omitempty"`
-	Items []snapshotValue `json:"items,omitempty"`
-}
-
-type valueType uint8
-
-const (
-	valueTypeInvalid valueType = iota
-	valueTypeNone
-	valueTypeBool
-	valueTypeInt
-	valueTypeFloat
-	valueTypeString
-	valueTypeTuple
-	valueTypeRef
-)
-
 func (e *Encoder) encode(value starlark.Value) (snapshotValue, error) {
+	if converter, ok := value.(Converter); ok {
+		converted, err := converter.ToValue()
+		if err != nil {
+			return snapshotValue{}, fmt.Errorf("convert custom type %s: %w", converter.Type(), err)
+		}
+
+		encoded, err := e.encode(converted)
+		if err != nil {
+			return snapshotValue{}, fmt.Errorf("encode custom type %s: %w", converter.Type(), err)
+		}
+		encoded.TypeName = converter.Type()
+		return encoded, nil
+	}
+
 	switch value := value.(type) {
 	case starlark.NoneType:
 		return snapshotValue{Kind: valueTypeNone}, nil
@@ -247,83 +168,4 @@ func (e *Encoder) encodeDict(dict *starlark.Dict) (snapshotValue, error) {
 func (e *Encoder) nextObjectID() int {
 	e.nextID++
 	return e.nextID
-}
-
-func (d *Decoder) decode(value snapshotValue) (starlark.Value, error) {
-	switch value.Kind {
-	case valueTypeNone:
-		return starlark.None, nil
-	case valueTypeBool:
-		return starlark.Bool(value.Bool), nil
-	case valueTypeInt:
-		bigInt, ok := new(big.Int).SetString(value.Text, 10)
-		if !ok {
-			return nil, fmt.Errorf("invalid int %q", value.Text)
-		}
-		return starlark.MakeBigInt(bigInt), nil
-	case valueTypeFloat:
-		return starlark.Float(value.Float), nil
-	case valueTypeString:
-		return starlark.String(value.Text), nil
-	case valueTypeTuple:
-		items := make([]starlark.Value, 0, len(value.Items))
-		for _, item := range value.Items {
-			decoded, err := d.decode(item)
-			if err != nil {
-				return nil, err
-			}
-			items = append(items, decoded)
-		}
-		return starlark.Tuple(items), nil
-	case valueTypeRef:
-		return d.decodeObject(value.Ref)
-	default:
-		return nil, fmt.Errorf("unknown value kind %d", value.Kind)
-	}
-}
-
-func (d *Decoder) decodeObject(id int) (starlark.Value, error) {
-	if value, ok := d.values[id]; ok {
-		return value, nil
-	}
-
-	object, ok := d.snapshot.Objects[id]
-	if !ok {
-		return nil, fmt.Errorf("unknown object ref %d", id)
-	}
-
-	switch object.Kind {
-	case objectKindList:
-		list := starlark.NewList(nil)
-		d.values[id] = list
-		for _, item := range object.Items {
-			decoded, err := d.decode(item)
-			if err != nil {
-				return nil, err
-			}
-			if err := list.Append(decoded); err != nil {
-				return nil, err
-			}
-		}
-		return list, nil
-	case objectKindDict:
-		dict := starlark.NewDict(len(object.Entries))
-		d.values[id] = dict
-		for _, entry := range object.Entries {
-			key, err := d.decode(entry.Key)
-			if err != nil {
-				return nil, err
-			}
-			value, err := d.decode(entry.Value)
-			if err != nil {
-				return nil, err
-			}
-			if err := dict.SetKey(key, value); err != nil {
-				return nil, err
-			}
-		}
-		return dict, nil
-	default:
-		return nil, fmt.Errorf("unknown object kind %d", object.Kind)
-	}
 }

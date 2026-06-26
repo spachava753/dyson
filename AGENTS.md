@@ -6,8 +6,8 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 
 ## Project Structure
 
-- `snapshot.go` contains the Starlark globals snapshot API. Keep the public surface shaped like the standard `encoding/json` package: `NewEncoder(w).Encode(globals)` and `NewDecoder(r).Decode(&globals)`.
-- `snapshot_test.go` contains snapshot and REPL-resume tests. Keep related cases grouped with table tests and `t.Run` rather than adding many one-off test functions.
+- `snapshot/` contains the Starlark globals snapshot implementation. Keep the public surface shaped like the standard `encoding/json` package: `snapshot.NewEncoder(w).Encode(globals)` and `snapshot.NewDecoder(r).Decode(&globals)`.
+- `snapshot/snapshot_test.go` contains snapshot and REPL-resume tests. Keep related cases grouped with table tests and `t.Run` rather than adding many one-off test functions.
 - `discovery.md` is informal design/research notes. Update it when learning important Starlark behavior that affects `dyson` design.
 
 ## Go Conventions

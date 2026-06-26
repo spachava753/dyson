@@ -30,7 +30,9 @@ Do not design examples around `load("re", "re")` unless there is a deliberate re
 
 Durable values returned into user globals should be plain snapshot-supported Starlark values whenever possible: `None`, bool, int, float, string, tuple, list, and dict.
 
-Avoid defining custom `starlark.Value` implementations for placeholder or scaffold values. Custom values are not currently supported by `snapshot.go` and will break REPL/session snapshots unless snapshot support is explicitly added.
+Custom `starlark.Value` implementations are allowed for real module-defined types when they implement `snapshot.Converter` and the module registers a matching `snapshot.RegisterRestorer` hook. The converter payload should use only snapshot-supported values, and tests should prove the custom value round-trips through `snapshot.NewEncoder` / `snapshot.NewDecoder`.
+
+Avoid defining custom `starlark.Value` implementations for placeholder or scaffold values when a plain supported value would be enough.
 
 Host functions are necessarily `*starlark.Builtin`; these should generally live in module globals, not inside durable user data structures.
 

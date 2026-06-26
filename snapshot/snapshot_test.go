@@ -1,4 +1,4 @@
-package dyson
+package snapshot
 
 import (
 	"bytes"
@@ -69,7 +69,9 @@ func TestEncoderRejectsInvalidGlobals(t *testing.T) {
 			var buf bytes.Buffer
 			err := NewEncoder(&buf).Encode(tt.globals)
 			be.Err(t, err)
-			assertErrorContains(t, err, tt.wantErrs...)
+			for _, want := range tt.wantErrs {
+				be.Err(t, err, want)
+			}
 		})
 	}
 }
@@ -107,6 +109,11 @@ func TestDecoderRejectsInvalidSnapshots(t *testing.T) {
 			input:    `{"globals":{"x":{"kind":3,"text":"not-an-int"}}}`,
 			wantErrs: []string{"decode global x", `invalid int "not-an-int"`},
 		},
+		{
+			name:     "unregistered custom type",
+			input:    `{"globals":{"x":{"kind":5,"type_name":"snapshot.test.missing","text":"x"}}}`,
+			wantErrs: []string{"decode global x", `unregistered custom type "snapshot.test.missing"`},
+		},
 	}
 
 	for _, tt := range tests {
@@ -120,16 +127,10 @@ func TestDecoderRejectsInvalidSnapshots(t *testing.T) {
 				err = decoder.Decode(&globals)
 			}
 			be.Err(t, err)
-			assertErrorContains(t, err, tt.wantErrs...)
+			for _, want := range tt.wantErrs {
+				be.Err(t, err, want)
+			}
 		})
-	}
-}
-
-func assertErrorContains(t *testing.T, err error, wants ...string) {
-	t.Helper()
-
-	for _, want := range wants {
-		be.Err(t, err, want)
 	}
 }
 

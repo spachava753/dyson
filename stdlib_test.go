@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nalgeon/be"
+	"github.com/spachava753/dyson/snapshot"
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
 )
@@ -24,10 +25,10 @@ pattern = compile("x", I)
 	be.Err(t, err, nil)
 
 	var buf bytes.Buffer
-	be.Err(t, NewEncoder(&buf).Encode(starlark.StringDict{"pattern": globals["pattern"]}), nil)
+	be.Err(t, snapshot.NewEncoder(&buf).Encode(starlark.StringDict{"pattern": globals["pattern"]}), nil)
 
 	var restored starlark.StringDict
-	be.Err(t, NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&restored), nil)
+	be.Err(t, snapshot.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&restored), nil)
 
 	pattern, ok := restored["pattern"].(*starlark.Dict)
 	be.True(t, ok)
@@ -39,6 +40,5 @@ pattern = compile("x", I)
 
 func TestLoadRejectsUnknownStdlibModule(t *testing.T) {
 	_, err := Load(&starlark.Thread{Name: "test"}, "math")
-	be.Err(t, err)
-	assertErrorContains(t, err, `unknown stdlib module "math"`)
+	be.Err(t, err, `unknown stdlib module "math"`)
 }
