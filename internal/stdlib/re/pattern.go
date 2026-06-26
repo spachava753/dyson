@@ -7,12 +7,26 @@ import (
 	"go.starlark.net/starlark"
 )
 
-func (p *patternValue) String() string        { return "re.compile(" + p.pattern.value.String() + ")" }
-func (p *patternValue) Type() string          { return "re.Pattern" }
-func (p *patternValue) Freeze()               { p.frozen = true }
-func (p *patternValue) Truth() starlark.Bool  { return starlark.True }
+// String returns a Python-like representation of the compiled pattern value.
+func (p *patternValue) String() string { return "re.compile(" + p.pattern.value.String() + ")" }
+
+// Type reports the Starlark-visible type name for compiled patterns.
+func (p *patternValue) Type() string { return "re.Pattern" }
+
+// Freeze marks the pattern immutable for Starlark's shared-value semantics.
+func (p *patternValue) Freeze() { p.frozen = true }
+
+// Truth reports that compiled patterns are always truthy.
+func (p *patternValue) Truth() starlark.Bool { return starlark.True }
+
+// Hash rejects hashing because Python re.Pattern objects are not hashable in
+// this compatibility layer.
 func (p *patternValue) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable type: re.Pattern") }
 
+// Attr exposes Python-compatible Pattern attributes and bound methods.
+//
+// It mirrors the supported subset of Python's re.Pattern API:
+// https://docs.python.org/3/library/re.html#re.Pattern
 func (p *patternValue) Attr(name string) (starlark.Value, error) {
 	switch name {
 	case "pattern":
@@ -29,8 +43,11 @@ func (p *patternValue) Attr(name string) (starlark.Value, error) {
 	return nil, nil
 }
 
+// AttrNames returns the names discoverable on compiled Pattern values.
 func (p *patternValue) AttrNames() []string { return patternAttrNames }
 
+// method builds the Starlark builtin implementation for a Python-compatible
+// Pattern method name.
 func (p *patternValue) method(name string) func(*starlark.Thread, *starlark.Builtin, starlark.Tuple, []starlark.Tuple) (starlark.Value, error) {
 	return func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		switch name {
@@ -80,6 +97,11 @@ func (p *patternValue) method(name string) func(*starlark.Thread, *starlark.Buil
 	}
 }
 
+// search implements Pattern.search, scanning the requested window for the first
+// match and returning either a Match value or None.
+//
+// It mirrors the supported subset of Python's Pattern.search:
+// https://docs.python.org/3/library/re.html#re.Pattern.search
 func (p *patternValue) search(text regexText, pos, endpos int) starlark.Value {
 	index := p.re.FindStringSubmatchIndex(text.text[pos:endpos])
 	if index == nil {
@@ -89,6 +111,11 @@ func (p *patternValue) search(text regexText, pos, endpos int) starlark.Value {
 	return &matchValue{pattern: p, input: text, pos: pos, endpos: endpos, index: index}
 }
 
+// match implements Pattern.match, requiring a match at the beginning of the
+// requested window and returning either a Match value or None.
+//
+// It mirrors the supported subset of Python's Pattern.match:
+// https://docs.python.org/3/library/re.html#re.Pattern.match
 func (p *patternValue) match(text regexText, pos, endpos int) starlark.Value {
 	index := p.re.FindStringSubmatchIndex(text.text[pos:endpos])
 	if index == nil || index[0] != 0 {
@@ -98,6 +125,11 @@ func (p *patternValue) match(text regexText, pos, endpos int) starlark.Value {
 	return &matchValue{pattern: p, input: text, pos: pos, endpos: endpos, index: index}
 }
 
+// fullmatch implements Pattern.fullmatch, requiring the requested window to be
+// fully matched and returning either a Match value or None.
+//
+// It mirrors the supported subset of Python's Pattern.fullmatch:
+// https://docs.python.org/3/library/re.html#re.Pattern.fullmatch
 func (p *patternValue) fullmatch(text regexText, pos, endpos int) starlark.Value {
 	index := p.re.FindStringSubmatchIndex(text.text[pos:endpos])
 	if index == nil || index[0] != 0 || index[1] != endpos-pos {
@@ -107,6 +139,11 @@ func (p *patternValue) fullmatch(text regexText, pos, endpos int) starlark.Value
 	return &matchValue{pattern: p, input: text, pos: pos, endpos: endpos, index: index}
 }
 
+// split implements Pattern.split, splitting text around non-overlapping matches
+// and including captured groups in the result.
+//
+// It mirrors the supported subset of Python's Pattern.split:
+// https://docs.python.org/3/library/re.html#re.Pattern.split
 func (p *patternValue) split(text regexText, maxsplit int) *starlark.List {
 	matches := p.re.FindAllStringSubmatchIndex(text.text, -1)
 	items := []starlark.Value{}
@@ -132,6 +169,11 @@ func (p *patternValue) split(text regexText, maxsplit int) *starlark.List {
 	return starlark.NewList(items)
 }
 
+// findall implements Pattern.findall, returning all non-overlapping matches as
+// strings, bytes, or tuples depending on the pattern's capturing groups.
+//
+// It mirrors the supported subset of Python's Pattern.findall:
+// https://docs.python.org/3/library/re.html#re.Pattern.findall
 func (p *patternValue) findall(text regexText) *starlark.List {
 	matches := p.re.FindAllStringSubmatchIndex(text.text, -1)
 	items := make([]starlark.Value, 0, len(matches))
@@ -162,6 +204,14 @@ func (p *patternValue) findall(text regexText) *starlark.List {
 	return starlark.NewList(items)
 }
 
+// finditer implements Pattern.finditer. Dyson returns a list of Match values
+// for Starlark consumption rather than a lazy Python iterator.
+//
+// TODO: Return a Starlark iterator instead of a list; Python's Pattern.finditer
+// returns an iterator.
+//
+// It mirrors the supported subset of Python's Pattern.finditer:
+// https://docs.python.org/3/library/re.html#re.Pattern.finditer
 func (p *patternValue) finditer(text regexText, pos, endpos int) *starlark.List {
 	window := text.window(pos, endpos)
 	matches := p.re.FindAllStringSubmatchIndex(window.text, -1)
@@ -173,6 +223,11 @@ func (p *patternValue) finditer(text regexText, pos, endpos int) *starlark.List 
 	return starlark.NewList(items)
 }
 
+// sub implements Pattern.sub and the shared replacement work for Pattern.subn,
+// returning the substituted value together with the replacement count.
+//
+// It mirrors the supported subset of Python's Pattern.sub:
+// https://docs.python.org/3/library/re.html#re.Pattern.sub
 func (p *patternValue) sub(thread *starlark.Thread, repl starlark.Value, text regexText, count int) (starlark.Value, int, error) {
 	matches := p.re.FindAllStringSubmatchIndex(text.text, -1)
 	if count > 0 && len(matches) > count {
@@ -203,6 +258,8 @@ func (p *patternValue) sub(thread *starlark.Thread, repl starlark.Value, text re
 	return text.starlarkValue(out.String()), len(matches), nil
 }
 
+// unpackPatternMethodArgs decodes Pattern search-like method arguments,
+// including Python-compatible pos and endpos bounds.
 func unpackPatternMethodArgs(fn string, args starlark.Tuple, kwargs []starlark.Tuple) (regexText, int, int, error) {
 	var textValue starlark.Value
 	posValue := starlark.MakeInt(0)
@@ -237,6 +294,7 @@ func unpackPatternMethodArgs(fn string, args starlark.Tuple, kwargs []starlark.T
 	return text, pos, endpos, nil
 }
 
+// unpackPatternSplitArgs decodes Pattern.split arguments and validates maxsplit.
 func unpackPatternSplitArgs(fn string, args starlark.Tuple, kwargs []starlark.Tuple) (regexText, int, error) {
 	var textValue starlark.Value
 	maxsplitValue := starlark.MakeInt(0)
@@ -254,6 +312,8 @@ func unpackPatternSplitArgs(fn string, args starlark.Tuple, kwargs []starlark.Tu
 	return text, maxsplit, nil
 }
 
+// unpackPatternSubArgs decodes Pattern.sub and Pattern.subn arguments,
+// accepting either a replacement template or a callable replacement.
 func unpackPatternSubArgs(fn string, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, regexText, int, error) {
 	var repl, textValue starlark.Value
 	countValue := starlark.MakeInt(0)
@@ -276,6 +336,8 @@ func unpackPatternSubArgs(fn string, args starlark.Tuple, kwargs []starlark.Tupl
 	return repl, text, count, nil
 }
 
+// shiftIndex translates regexp match offsets from a sliced search window back to
+// offsets in the original input text.
 func shiftIndex(index []int, offset int) {
 	for i, value := range index {
 		if value >= 0 {

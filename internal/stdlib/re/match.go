@@ -6,14 +6,29 @@ import (
 	"go.starlark.net/starlark"
 )
 
+// String returns a Python-like representation of the match object, including the
+// matched span and group 0 text.
 func (m *matchValue) String() string {
 	return fmt.Sprintf("<re.Match object; span=(%d, %d), match=%s>", m.index[0], m.index[1], m.input.starlarkValue(m.groupString(0)).String())
 }
-func (m *matchValue) Type() string          { return "re.Match" }
-func (m *matchValue) Freeze()               { m.frozen = true }
-func (m *matchValue) Truth() starlark.Bool  { return starlark.True }
+
+// Type reports the Starlark-visible type name for regex matches.
+func (m *matchValue) Type() string { return "re.Match" }
+
+// Freeze marks the match immutable for Starlark's shared-value semantics.
+func (m *matchValue) Freeze() { m.frozen = true }
+
+// Truth reports that concrete match objects are always truthy.
+func (m *matchValue) Truth() starlark.Bool { return starlark.True }
+
+// Hash rejects hashing because Python re.Match objects are not hashable in this
+// compatibility layer.
 func (m *matchValue) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable type: re.Match") }
 
+// Attr exposes Python-compatible Match attributes and bound methods.
+//
+// It mirrors the supported subset of Python's re.Match API:
+// https://docs.python.org/3/library/re.html#match-objects
 func (m *matchValue) Attr(name string) (starlark.Value, error) {
 	switch name {
 	case "pos":
@@ -38,8 +53,11 @@ func (m *matchValue) Attr(name string) (starlark.Value, error) {
 	return nil, nil
 }
 
+// AttrNames returns the names discoverable on Match values.
 func (m *matchValue) AttrNames() []string { return matchAttrNames }
 
+// method builds the Starlark builtin implementation for a Python-compatible
+// Match method name.
 func (m *matchValue) method(name string) func(*starlark.Thread, *starlark.Builtin, starlark.Tuple, []starlark.Tuple) (starlark.Value, error) {
 	return func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		switch name {
@@ -125,6 +143,11 @@ func (m *matchValue) method(name string) func(*starlark.Thread, *starlark.Builti
 	}
 }
 
+// groupByValue implements Match.group lookup for an integer or named group
+// reference supplied from Starlark.
+//
+// It mirrors the supported subset of Python's Match.group:
+// https://docs.python.org/3/library/re.html#re.Match.group
 func (m *matchValue) groupByValue(value starlark.Value) (starlark.Value, error) {
 	group, ok, err := groupNumber(value, m.pattern)
 	if err != nil {
@@ -136,6 +159,8 @@ func (m *matchValue) groupByValue(value starlark.Value) (starlark.Value, error) 
 	return m.group(group)
 }
 
+// group returns the captured text for a numeric group, None for an unmatched
+// existing group, or an error for an out-of-range group.
 func (m *matchValue) group(group int) (starlark.Value, error) {
 	if group < 0 || group > m.pattern.groups {
 		return nil, fmt.Errorf("no such group")
@@ -147,6 +172,8 @@ func (m *matchValue) group(group int) (starlark.Value, error) {
 	return m.input.starlarkValue(m.input.text[start-m.input.offset : end-m.input.offset]), nil
 }
 
+// groupString returns the captured text for replacement expansion, using an
+// empty string for invalid or unmatched groups as Python substitutions do.
 func (m *matchValue) groupString(group int) string {
 	if group < 0 || group > m.pattern.groups {
 		return ""
@@ -158,6 +185,11 @@ func (m *matchValue) groupString(group int) string {
 	return m.input.text[start-m.input.offset : end-m.input.offset]
 }
 
+// spanForValue resolves an integer or named group reference and returns the
+// group's start and end offsets.
+//
+// It mirrors the supported subset of Python's Match.span:
+// https://docs.python.org/3/library/re.html#re.Match.span
 func (m *matchValue) spanForValue(value starlark.Value) (int, int, error) {
 	group, ok, err := groupNumber(value, m.pattern)
 	if err != nil {
@@ -169,6 +201,11 @@ func (m *matchValue) spanForValue(value starlark.Value) (int, int, error) {
 	return m.index[group*2], m.index[group*2+1], nil
 }
 
+// lastIndex returns the Starlark value for Match.lastindex: the highest matched
+// capturing group number, or None when no capturing group matched.
+//
+// It mirrors the supported subset of Python's Match.lastindex:
+// https://docs.python.org/3/library/re.html#re.Match.lastindex
 func (m *matchValue) lastIndex() starlark.Value {
 	last := m.lastIndexValue()
 	if last == 0 {
@@ -177,6 +214,8 @@ func (m *matchValue) lastIndex() starlark.Value {
 	return starlark.MakeInt(last)
 }
 
+// lastIndexValue returns the numeric highest matched capturing group, or zero
+// when no capturing group matched.
 func (m *matchValue) lastIndexValue() int {
 	for group := m.pattern.groups; group >= 1; group-- {
 		if m.index[group*2] >= 0 {
@@ -186,6 +225,8 @@ func (m *matchValue) lastIndexValue() int {
 	return 0
 }
 
+// unpackOptionalGroup decodes methods whose only optional parameter is a group
+// reference, defaulting to group 0.
 func unpackOptionalGroup(fn string, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var group starlark.Value = starlark.MakeInt(0)
 	if err := starlark.UnpackArgs(fn, args, kwargs, "group?", &group); err != nil {
@@ -194,6 +235,8 @@ func unpackOptionalGroup(fn string, args starlark.Tuple, kwargs []starlark.Tuple
 	return group, nil
 }
 
+// groupNumber resolves a Starlark integer or string group reference to a numeric
+// group index and reports whether it exists on the pattern.
 func groupNumber(value starlark.Value, pattern *patternValue) (int, bool, error) {
 	switch v := value.(type) {
 	case starlark.Int:
