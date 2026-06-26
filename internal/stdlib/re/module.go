@@ -55,13 +55,6 @@ var (
 		"start",
 		"string",
 	}
-	patternErrorAttrNames = []string{
-		"colno",
-		"lineno",
-		"msg",
-		"pattern",
-		"pos",
-	}
 )
 
 var module = sync.OnceValue(func() starlark.StringDict {
@@ -77,12 +70,6 @@ var module = sync.OnceValue(func() starlark.StringDict {
 		"subn":      starlark.NewBuiltin(ModuleName+".subn", subn),
 		"escape":    starlark.NewBuiltin(ModuleName+".escape", escape),
 		"purge":     starlark.NewBuiltin(ModuleName+".purge", purge),
-
-		"RegexFlag":    metadata("RegexFlag", nil),
-		"Pattern":      metadata("Pattern", patternAttrNames),
-		"Match":        metadata("Match", matchAttrNames),
-		"PatternError": metadata("PatternError", patternErrorAttrNames),
-		"error":        metadata("PatternError", patternErrorAttrNames),
 
 		"NOFLAG":     starlark.MakeInt(flagNoFlag),
 		"ASCII":      starlark.MakeInt(flagASCII),
@@ -110,21 +97,6 @@ var module = sync.OnceValue(func() starlark.StringDict {
 // LoadModule returns Dyson's Python-compatible re module.
 func LoadModule() (starlark.StringDict, error) {
 	return module(), nil
-}
-
-func metadata(name string, attrs []string) *starlark.Dict {
-	dict := starlark.NewDict(2)
-	mustSet(dict, "name", starlark.String("re."+name))
-	mustSet(dict, "attrs", stringList(attrs))
-	return dict
-}
-
-func stringList(values []string) *starlark.List {
-	items := make([]starlark.Value, 0, len(values))
-	for _, value := range values {
-		items = append(items, starlark.String(value))
-	}
-	return starlark.NewList(items)
 }
 
 func mustSet(dict *starlark.Dict, key string, value starlark.Value) {

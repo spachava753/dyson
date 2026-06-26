@@ -2,6 +2,8 @@ package re
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 
 	"go.starlark.net/starlark"
 )
@@ -13,81 +15,82 @@ func compile(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple,
 		return nil, err
 	}
 
-	if compiled, ok := asPattern(expr); ok {
+	if compiled, ok := expr.(*patternValue); ok {
 		if flags.Sign() != 0 {
 			return nil, fmt.Errorf("re.compile: cannot process flags argument with a compiled pattern")
 		}
 		return compiled, nil
 	}
-	if err := requireRegexText("re.compile", "pattern", expr); err != nil {
-		return nil, err
-	}
-	return newPattern(expr, flags), nil
+	return newPattern("re.compile", expr, flags)
 }
 
 func search(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	if err := unpackPatternStringFlags("re.search", args, kwargs); err != nil {
+	pattern, text, err := unpackPatternStringFlags("re.search", args, kwargs)
+	if err != nil {
 		return nil, err
 	}
-	return nil, notImplemented("re.search")
+	return pattern.search(text, 0, len(text.text)), nil
 }
 
 func match(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	if err := unpackPatternStringFlags("re.match", args, kwargs); err != nil {
+	pattern, text, err := unpackPatternStringFlags("re.match", args, kwargs)
+	if err != nil {
 		return nil, err
 	}
-	return nil, notImplemented("re.match")
+	return pattern.match(text, 0, len(text.text)), nil
 }
 
 func fullMatch(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	if err := unpackPatternStringFlags("re.fullmatch", args, kwargs); err != nil {
+	pattern, text, err := unpackPatternStringFlags("re.fullmatch", args, kwargs)
+	if err != nil {
 		return nil, err
 	}
-	return nil, notImplemented("re.fullmatch")
+	return pattern.fullmatch(text, 0, len(text.text)), nil
 }
 
 func split(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var expr, text starlark.Value
-	maxsplit := starlark.MakeInt(0)
-	flags := starlark.MakeInt(0)
-	if err := starlark.UnpackArgs("re.split", args, kwargs, "pattern", &expr, "string", &text, "maxsplit?", &maxsplit, "flags?", &flags); err != nil {
+	pattern, text, maxsplit, err := unpackSplitArgs("re.split", args, kwargs)
+	if err != nil {
 		return nil, err
 	}
-	if err := requirePattern("re.split", expr); err != nil {
-		return nil, err
-	}
-	if err := requireRegexText("re.split", "string", text); err != nil {
-		return nil, err
-	}
-	return nil, notImplemented("re.split")
+	return pattern.split(text, maxsplit), nil
 }
 
 func findAll(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	if err := unpackPatternStringFlags("re.findall", args, kwargs); err != nil {
+	pattern, text, err := unpackPatternStringFlags("re.findall", args, kwargs)
+	if err != nil {
 		return nil, err
 	}
-	return nil, notImplemented("re.findall")
+	return pattern.findall(text), nil
 }
 
 func findIter(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	if err := unpackPatternStringFlags("re.finditer", args, kwargs); err != nil {
+	pattern, text, err := unpackPatternStringFlags("re.finditer", args, kwargs)
+	if err != nil {
 		return nil, err
 	}
-	return nil, notImplemented("re.finditer")
+	return pattern.finditer(text, 0, len(text.text)), nil
 }
 
 func sub(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	if err := unpackSubArgs("re.sub", args, kwargs); err != nil {
+	pattern, repl, text, count, err := unpackSubArgs("re.sub", args, kwargs)
+	if err != nil {
 		return nil, err
 	}
-	return nil, notImplemented("re.sub")
+	value, _, err := pattern.sub(thread, repl, text, count)
+	return value, err
 }
 
 func subn(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	if err := unpackSubArgs("re.subn", args, kwargs); err != nil {
+	pattern, repl, text, count, err := unpackSubArgs("re.subn", args, kwargs)
+	if err != nil {
 		return nil, err
 	}
-	return nil, notImplemented("re.subn")
+	value, n, err := pattern.sub(thread, repl, text, count)
+	if err != nil {
+		return nil, err
+	}
+	return starlark.Tuple{value, starlark.MakeInt(n)}, nil
 }
 
 func escape(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -95,10 +98,11 @@ func escape(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, 
 	if err := starlark.UnpackArgs("re.escape", args, kwargs, "pattern", &expr); err != nil {
 		return nil, err
 	}
-	if err := requireRegexText("re.escape", "pattern", expr); err != nil {
+	text, err := regexTextFromValue("re.escape", "pattern", expr)
+	if err != nil {
 		return nil, err
 	}
-	return nil, notImplemented("re.escape")
+	return text.starlarkValue(regexp.QuoteMeta(text.text)), nil
 }
 
 func purge(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -108,81 +112,151 @@ func purge(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, k
 	return starlark.None, nil
 }
 
-func unpackPatternStringFlags(fn string, args starlark.Tuple, kwargs []starlark.Tuple) error {
-	var expr, text starlark.Value
+func unpackPatternStringFlags(fn string, args starlark.Tuple, kwargs []starlark.Tuple) (*patternValue, regexText, error) {
+	var expr, textValue starlark.Value
 	flags := starlark.MakeInt(0)
-	if err := starlark.UnpackArgs(fn, args, kwargs, "pattern", &expr, "string", &text, "flags?", &flags); err != nil {
-		return err
+	if err := starlark.UnpackArgs(fn, args, kwargs, "pattern", &expr, "string", &textValue, "flags?", &flags); err != nil {
+		return nil, regexText{}, err
 	}
-	if err := requirePattern(fn, expr); err != nil {
-		return err
+	pattern, err := compileOrUsePattern(fn, expr, flags)
+	if err != nil {
+		return nil, regexText{}, err
 	}
-	return requireRegexText(fn, "string", text)
+	text, err := regexTextFromValue(fn, "string", textValue)
+	if err != nil {
+		return nil, regexText{}, err
+	}
+	return pattern, text, nil
 }
 
-func unpackSubArgs(fn string, args starlark.Tuple, kwargs []starlark.Tuple) error {
-	var expr, repl, text starlark.Value
-	count := starlark.MakeInt(0)
+func unpackSplitArgs(fn string, args starlark.Tuple, kwargs []starlark.Tuple) (*patternValue, regexText, int, error) {
+	var expr, textValue starlark.Value
+	maxsplitValue := starlark.MakeInt(0)
 	flags := starlark.MakeInt(0)
-	if err := starlark.UnpackArgs(fn, args, kwargs, "pattern", &expr, "repl", &repl, "string", &text, "count?", &count, "flags?", &flags); err != nil {
-		return err
+	if err := starlark.UnpackArgs(fn, args, kwargs, "pattern", &expr, "string", &textValue, "maxsplit?", &maxsplitValue, "flags?", &flags); err != nil {
+		return nil, regexText{}, 0, err
 	}
-	if err := requirePattern(fn, expr); err != nil {
-		return err
+	pattern, err := compileOrUsePattern(fn, expr, flags)
+	if err != nil {
+		return nil, regexText{}, 0, err
 	}
-	if err := requireReplacement(fn, repl); err != nil {
-		return err
+	text, err := regexTextFromValue(fn, "string", textValue)
+	if err != nil {
+		return nil, regexText{}, 0, err
 	}
-	return requireRegexText(fn, "string", text)
+	maxsplit, err := intFromStarlark(fn, "maxsplit", maxsplitValue)
+	if err != nil {
+		return nil, regexText{}, 0, err
+	}
+	return pattern, text, maxsplit, nil
 }
 
-func requirePattern(fn string, value starlark.Value) error {
-	if _, ok := asPattern(value); ok {
-		return nil
+func unpackSubArgs(fn string, args starlark.Tuple, kwargs []starlark.Tuple) (*patternValue, starlark.Value, regexText, int, error) {
+	var expr, repl, textValue starlark.Value
+	countValue := starlark.MakeInt(0)
+	flags := starlark.MakeInt(0)
+	if err := starlark.UnpackArgs(fn, args, kwargs, "pattern", &expr, "repl", &repl, "string", &textValue, "count?", &countValue, "flags?", &flags); err != nil {
+		return nil, nil, regexText{}, 0, err
 	}
-	return requireRegexText(fn, "pattern", value)
+	pattern, err := compileOrUsePattern(fn, expr, flags)
+	if err != nil {
+		return nil, nil, regexText{}, 0, err
+	}
+	if _, ok := repl.(starlark.Callable); !ok {
+		if _, err := regexTextFromValue(fn, "repl", repl); err != nil {
+			return nil, nil, regexText{}, 0, err
+		}
+	}
+	text, err := regexTextFromValue(fn, "string", textValue)
+	if err != nil {
+		return nil, nil, regexText{}, 0, err
+	}
+	count, err := intFromStarlark(fn, "count", countValue)
+	if err != nil {
+		return nil, nil, regexText{}, 0, err
+	}
+	return pattern, repl, text, count, nil
 }
 
-func newPattern(expr starlark.Value, flags starlark.Int) *starlark.Dict {
-	pattern := starlark.NewDict(6)
-	mustSet(pattern, "kind", starlark.String("re.Pattern"))
-	mustSet(pattern, "pattern", expr)
-	mustSet(pattern, "flags", flags)
-	mustSet(pattern, "groups", starlark.MakeInt(0))
-	mustSet(pattern, "groupindex", starlark.NewDict(0))
-	mustSet(pattern, "attrs", stringList(patternAttrNames))
-	pattern.Freeze()
-	return pattern
+func compileOrUsePattern(fn string, expr starlark.Value, flags starlark.Int) (*patternValue, error) {
+	if compiled, ok := expr.(*patternValue); ok {
+		if flags.Sign() != 0 {
+			return nil, fmt.Errorf("%s: cannot process flags argument with a compiled pattern", fn)
+		}
+		return compiled, nil
+	}
+	return newPattern(fn, expr, flags)
 }
 
-func asPattern(value starlark.Value) (*starlark.Dict, bool) {
-	dict, ok := value.(*starlark.Dict)
-	if !ok {
-		return nil, false
+func newPattern(fn string, expr starlark.Value, flagsValue starlark.Int) (*patternValue, error) {
+	text, err := regexTextFromValue(fn, "pattern", expr)
+	if err != nil {
+		return nil, err
 	}
-	kind, found, err := dict.Get(starlark.String("kind"))
-	if err != nil || !found || kind != starlark.String("re.Pattern") {
-		return nil, false
+	flags, err := intFromStarlark(fn, "flags", flagsValue)
+	if err != nil {
+		return nil, err
 	}
-	return dict, true
+	re, names, groupIndex, err := compileRegex(fn, text, flags)
+	if err != nil {
+		return nil, err
+	}
+	return &patternValue{pattern: text, flags: flags, expr: re.String(), re: re, groups: re.NumSubexp(), groupNames: names, groupIndex: groupIndex}, nil
 }
 
-func requireRegexText(fn, param string, value starlark.Value) error {
-	switch value.(type) {
-	case starlark.String, starlark.Bytes:
-		return nil
-	default:
-		return fmt.Errorf("%s: %s must be str or bytes, got %s", fn, param, value.Type())
+func expandReplacement(template string, match *matchValue) string {
+	var out strings.Builder
+	for i := 0; i < len(template); i++ {
+		ch := template[i]
+		if ch != '\\' || i+1 >= len(template) {
+			out.WriteByte(ch)
+			continue
+		}
+		i++
+		next := template[i]
+		switch {
+		case next >= '1' && next <= '9':
+			group := int(next - '0')
+			out.WriteString(match.groupString(group))
+		case next == 'g' && i+1 < len(template) && template[i+1] == '<':
+			end := strings.IndexByte(template[i+2:], '>')
+			if end < 0 {
+				out.WriteString("\\g")
+				continue
+			}
+			name := template[i+2 : i+2+end]
+			i += end + 2
+			if n, ok := parseGroupRef(name, match.pattern); ok {
+				out.WriteString(match.groupString(n))
+			}
+		case next == 'n':
+			out.WriteByte('\n')
+		case next == 't':
+			out.WriteByte('\t')
+		case next == 'r':
+			out.WriteByte('\r')
+		default:
+			out.WriteByte(next)
+		}
 	}
+	return out.String()
 }
 
-func requireReplacement(fn string, value starlark.Value) error {
-	if _, ok := value.(starlark.Callable); ok {
-		return nil
+func parseGroupRef(ref string, pattern *patternValue) (int, bool) {
+	if ref == "0" {
+		return 0, true
 	}
-	return requireRegexText(fn, "repl", value)
-}
-
-func notImplemented(name string) error {
-	return fmt.Errorf("%s is not implemented", name)
+	var n int
+	for _, r := range ref {
+		if r < '0' || r > '9' {
+			value, found, err := pattern.groupIndex.Get(starlark.String(ref))
+			if err != nil || !found {
+				return 0, false
+			}
+			group, err := starlark.AsInt32(value)
+			return group, err == nil
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n, n <= pattern.groups
 }

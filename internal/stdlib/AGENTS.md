@@ -30,7 +30,7 @@ Do not design examples around `load("re", "re")` unless there is a deliberate re
 
 Durable values returned into user globals should be plain snapshot-supported Starlark values whenever possible: `None`, bool, int, float, string, tuple, list, and dict.
 
-Custom `starlark.Value` implementations are allowed for real module-defined types when they implement `snapshot.Converter` and the module registers a matching `snapshot.RegisterRestorer` hook. The converter payload should use only snapshot-supported values, and tests should prove the custom value round-trips through `snapshot.NewEncoder` / `snapshot.NewDecoder`.
+Custom `starlark.Value` implementations are allowed for real module-defined types, but every production custom value returned to Starlark must implement `snapshot.Converter` and the module must register a matching `snapshot.RegisterRestorer` hook. The converter payload should use only snapshot-supported values, and tests should prove the custom value round-trips through `snapshot.NewEncoder` / `snapshot.NewDecoder`.
 
 Avoid defining custom `starlark.Value` implementations for placeholder or scaffold values when a plain supported value would be enough.
 
@@ -49,5 +49,11 @@ Keep module API-surface tests in the module package. Tests should verify:
 - `LoadModule` returns the `{ModuleName: *starlarkstruct.Module}` shape.
 - Scripts load symbols with `load("module", "symbol")`.
 - Exported constants and aliases have compatibility-visible values.
-- Scaffolded operations abort with stable module-qualified messages.
-- Any durable values returned by stubs can round-trip through the root snapshot encoder when relevant.
+- Scaffolded or unsupported operations abort with stable module-qualified messages.
+- Any durable values returned by module APIs can round-trip through the root snapshot encoder when relevant.
+
+Prefer Starlark testdata for module behavior. Put user-visible compatibility scenarios in `internal/stdlib/<name>/testdata/*.star` and execute them from a small Go harness in the module package. Keep Go assertions for host integration details that are awkward to express in Starlark, such as `LoadModule` shape, snapshot encoder/decoder integration, or low-level Go type checks.
+
+Use focused chunks separated by `---` for Starlark testdata. Each chunk should cover one behavior area and include short comments explaining what is being verified. Use `go.starlark.net/starlarktest`'s `assert.star` helpers for in-script assertions, and prefer inline expected-error annotations such as `### "module.fn: message"` for failure cases when the local harness supports them.
+
+When adding broad compatibility for a module, favor many small Starlark examples over one large script that sets globals for Go to inspect. The test should read like executable documentation of the supported compatibility surface and its intentional divergences.
