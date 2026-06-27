@@ -17,6 +17,9 @@ assert.true("sleep" in dir(time), "sleep")
 assert.true("gmtime" in dir(time), "gmtime")
 assert.true("strftime" in dir(time), "strftime")
 assert.true("struct_time" in dir(time), "struct_time")
+constructed = time.struct_time((1970, 1, 1, 0, 0, 0, 3, 1, 0))
+assert.eq(type(constructed), "struct_time")
+assert.eq(tuple(constructed), (1970, 1, 1, 0, 0, 0, 3, 1, 0))
 
 ---
 # Timezone globals are present and default to UTC for deterministic execution.
@@ -223,3 +226,69 @@ time.sleep("not seconds") ### "time.sleep: seconds must be int or float, got str
 load("time.star", "time")
 
 time.strptime("not a date", "%Y-%m-%d") ### "time.strptime:"
+
+---
+# get_clock_info rejects unknown clock names with a function-local error.
+load("time.star", "time")
+
+time.get_clock_info("bogus") ### "time.get_clock_info: unknown clock"
+
+---
+# gmtime validates the optional seconds argument type.
+load("time.star", "time")
+
+time.gmtime("now") ### "time.gmtime: seconds must be int or float, got string"
+
+---
+# localtime validates the optional seconds argument type.
+load("time.star", "time")
+
+time.localtime([]) ### "time.localtime: seconds must be int or float, got list"
+
+---
+# ctime validates the optional seconds argument type.
+load("time.star", "time")
+
+time.ctime({}) ### "time.ctime: seconds must be int or float, got dict"
+
+---
+# mktime requires a sequence with at least nine fields.
+load("time.star", "time")
+
+time.mktime((1970, 1, 1)) ### "time.mktime: time tuple must have at least 9 items"
+
+---
+# mktime requires integer time tuple fields.
+load("time.star", "time")
+
+time.mktime((1970, 1, "day", 0, 0, 0, 3, 1, 0)) ### "time.mktime: time tuple item 2 must be int"
+
+---
+# asctime validates explicit time tuple shape.
+load("time.star", "time")
+
+time.asctime((1970, 1, 1)) ### "time.asctime: time tuple must have at least 9 items"
+
+---
+# strftime validates explicit time tuple fields before formatting.
+load("time.star", "time")
+
+time.strftime("%Y", (1970, 1, 1, 0, 0, 0, 3, "day", 0)) ### "time.strftime: time tuple item 7 must be int"
+
+---
+# strptime rejects unsupported directives rather than silently misparsing.
+load("time.star", "time")
+
+time.strptime("001", "%j") ### "time.strptime: unsupported format directive"
+
+---
+# struct_time requires a sequence with at least nine fields.
+load("time.star", "time")
+
+time.struct_time((1970, 1, 1)) ### "time.struct_time: time tuple must have at least 9 items"
+
+---
+# struct_time requires integer fields.
+load("time.star", "time")
+
+time.struct_time((1970, 1, 1, 0, 0, None, 3, 1, 0)) ### "time.struct_time: time tuple item 5 must be int"
