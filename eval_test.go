@@ -34,7 +34,9 @@ func TestEvalTestdata(t *testing.T) {
 			s := NewSphere(func(thread *starlark.Thread, msg string) {
 				fmt.Fprintln(&sb, msg)
 			}, map[string]starlark.StringDict{
-				math.Module.Name: math.Module.Members,
+				math.Module.Name + ".star": {
+					"math": math.Module,
+				},
 			}, registry)
 			lastIdx := len(chunks) - 1
 
@@ -54,8 +56,10 @@ func TestEvalTestdata(t *testing.T) {
 			s = NewSphere(func(thread *starlark.Thread, msg string) {
 				fmt.Fprintln(&sb, msg)
 			}, map[string]starlark.StringDict{
-				"assert.star":    m,
-				math.Module.Name: math.Module.Members,
+				"assert.star": m,
+				math.Module.Name + ".star": {
+					"math": math.Module,
+				},
 			}, registry)
 			starlarktest.SetReporter(s.t, t)
 			// Replay may encounter the same intentional Starlark failures as setup chunks.

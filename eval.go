@@ -36,7 +36,7 @@ func NewSphere(
 		While:             true,
 		TopLevelControl:   true,
 		GlobalReassign:    true,
-		LoadBindsGlobally: false,
+		LoadBindsGlobally: true,
 		Recursion:         false,
 	}
 	s := &Sphere{fopts: fopts, g: make(starlark.StringDict), codecs: codecs}

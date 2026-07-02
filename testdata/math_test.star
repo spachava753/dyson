@@ -1,19 +1,16 @@
 # basic test with math function builtins
 
 # should restore values derived from module constants
-load("math", "pi")
-a = pi
+load("math.star", "math")
+a = math.pi
 ---
-load("math", "e")
-b = e
+b = math.e
 ---
 # call a module builtin
-load("math", "ceil")
-c = ceil(1.5)
+c = math.ceil(1.5)
 ---
 load("assert.star", "assert")
-load("math", "pi", "e")
 
-assert.eq(a, pi)
-assert.eq(b, e)
+assert.eq(a, math.pi)
+assert.eq(b, math.e)
 assert.eq(c, 2)
