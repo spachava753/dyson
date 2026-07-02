@@ -27,6 +27,7 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 ## Tests
 
 - Use `github.com/nalgeon/be` for assertions.
+- Prefer Starlark execution-based tests for behavior that is easiest to understand as Starlark code. Put readable scenarios in `testdata` fixtures and use `internal/chunkedfile` with `---` separators when setup/assertion chunks make the test clearer.
 - Prefer table-driven tests and `t.Run` for related cases.
 - Keep standalone test functions for distinct behavior-level scenarios, such as a REPL resume integration test.
 - Run `go test ./...` after code changes.

@@ -44,6 +44,75 @@ func TestEvalTestdata(t *testing.T) {
 	})
 }
 
+func TestContainerGraphTestdata(t *testing.T) {
+	chunks := chunkedfile.Read("testdata/container_graph.star", t)
+	if len(chunks)%2 != 0 {
+		t.Fatalf("container graph fixture has %d chunks, want setup/assertion pairs", len(chunks))
+	}
+
+	for i := 0; i < len(chunks); i += 2 {
+		setupChunk := chunks[i]
+		assertChunk := chunks[i+1]
+		t.Run(containerGraphScenarioName(setupChunk.Source, i/2), func(t *testing.T) {
+			setup := newContainerGraphTestSphere(t)
+			err := setup.Eval(t.Context(), setupChunk.Source)
+			if err != nil {
+				setupChunk.GotErrorAnyLine(err.Error())
+			}
+			setupChunk.Done()
+
+			restoredGlobals := restoreContainerGraphGlobals(t, setup.g)
+			assertion := newContainerGraphTestSphere(t)
+			for name, val := range restoredGlobals {
+				assertion.g[name] = val
+			}
+
+			err = assertion.Eval(t.Context(), assertChunk.Source)
+			if err != nil {
+				assertChunk.GotErrorAnyLine(err.Error())
+			}
+			assertChunk.Done()
+		})
+	}
+}
+
+func newContainerGraphTestSphere(t *testing.T) *Sphere {
+	t.Helper()
+	assertModule, err := starlarktest.LoadAssertModule()
+	be.Err(t, err, nil)
+	s := NewSphere(func(thread *starlark.Thread, msg string) {
+		t.Log(msg)
+	}, map[string]starlark.StringDict{
+		"assert.star": assertModule,
+	}, DefaultCodecRegistry())
+	starlarktest.SetReporter(s.t, t)
+	return s
+}
+
+func restoreContainerGraphGlobals(t *testing.T, globals starlark.StringDict) starlark.StringDict {
+	t.Helper()
+	registry := DefaultCodecRegistry()
+	restored := make(starlark.StringDict, len(globals))
+	for name, val := range globals {
+		serialized, err := registry.Serialize(val)
+		be.Err(t, err, nil)
+		restoredVal, err := registry.Restore(serialized)
+		be.Err(t, err, nil)
+		restored[name] = restoredVal
+	}
+	return restored
+}
+
+func containerGraphScenarioName(source string, index int) string {
+	for line := range strings.SplitSeq(source, "\n") {
+		line = strings.TrimSpace(line)
+		if name, ok := strings.CutPrefix(line, "# "); ok {
+			return strings.ReplaceAll(name, " ", "_")
+		}
+	}
+	return fmt.Sprintf("scenario_%02d", index+1)
+}
+
 func mustSerialize(t *testing.T, registry CodecRegistry, val starlark.Value) SerializedVal {
 	t.Helper()
 	sv, err := registry.Serialize(val)
