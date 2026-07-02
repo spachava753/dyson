@@ -38,7 +38,7 @@ func (s *Sphere) record(
 	resp SerializedVal,
 	respErr error,
 ) {
-	currChunk := s.Log[len(s.Log)-1]
+	currChunk := s.log[len(s.log)-1]
 	currChunk.Calls = append(currChunk.Calls, HostCall{
 		FnName:   fnname,
 		Args:     args,
@@ -46,7 +46,7 @@ func (s *Sphere) record(
 		Response: resp,
 		Err:      respErr,
 	})
-	s.Log[len(s.Log)-1] = currChunk
+	s.log[len(s.log)-1] = currChunk
 }
 
 // CallInternal records the durable boundary around a host builtin. Inputs are
@@ -54,6 +54,13 @@ func (s *Sphere) record(
 // host effect; outputs or Go errors are recorded after the call returns.
 // TODO: do we need to override [starlark.Builtin.BindReceiver] too?
 func (d *DurableBuiltin) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	if d.s.replaying {
+		capturedCall := d.s.log[d.s.replayChunk].Calls[d.s.replayStep]
+		d.s.replayStep++
+		// TODO: verify hash of input is the same
+		// TODO: maybe if we know that this builtin called callbacks before, we can re-execute? We would need to store the fact that this called a call back before
+		return d.s.codecs[capturedCall.Response.Type].Restore(capturedCall.Response)
+	}
 	serializedArgs, serializedKwargs, err := d.s.serializeCallInputs(args, kwargs)
 	if err != nil {
 		return nil, err
