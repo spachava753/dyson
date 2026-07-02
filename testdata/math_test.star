@@ -9,6 +9,11 @@ b = math.e
 # call a module builtin
 c = math.ceil(1.5)
 ---
+# call a module builtin
+def add(x, y):
+    return x + y
+math.ceil = add ### "can't assign to .ceil field of module"
+---
 load("assert.star", "assert")
 
 assert.eq(a, math.pi)
