@@ -4,19 +4,39 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
+	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson/internal/chunkedfile"
+	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
+	"github.com/spachava753/dyson/internal/xfs"
 	"go.starlark.net/starlark"
+	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/starlarktest"
 	"go.starlark.net/syntax"
 )
 
 func TestGlobTestdata(t *testing.T) {
-	filename := filepath.Join("testdata", "glob.star")
+	filename, err := filepath.Abs(filepath.Join("testdata", "glob.star"))
+	be.Err(t, err, nil)
+
+	osModule := stdlibos.MakeModule(xfs.IOFS{FS: fstest.MapFS{
+		"a.txt":             {Data: []byte("a")},
+		"b.py":              {Data: []byte("b")},
+		".hidden":           {Data: []byte("hidden")},
+		"subdir/nested.txt": {Data: []byte("nested")},
+	}})
+	module := MakeModule(osModule)
+
+	predeclared := starlark.StringDict{
+		"root": starlark.String("."),
+		"sep":  starlark.String("/"),
+	}
+
 	for i, chunk := range chunkedfile.Read(filename, t) {
 		t.Run(fmt.Sprintf("chunk_%02d", i+1), func(t *testing.T) {
-			thread := newTestThread(t)
-			_, err := starlark.ExecFileOptions(&syntax.FileOptions{}, thread, filename, chunk.Source, nil)
+			thread := newTestThread(t, module)
+			_, err := starlark.ExecFileOptions(&syntax.FileOptions{}, thread, filename, chunk.Source, predeclared)
 			if err != nil {
 				chunk.GotErrorAnyLine(err.Error())
 			}
@@ -25,14 +45,14 @@ func TestGlobTestdata(t *testing.T) {
 	}
 }
 
-func newTestThread(t *testing.T) *starlark.Thread {
+func newTestThread(t *testing.T, module *starlarkstruct.Module) *starlark.Thread {
 	thread := &starlark.Thread{
 		Name: "test",
 		Load: func(thread *starlark.Thread, name string) (starlark.StringDict, error) {
 			switch name {
 			case ModuleName + ".star":
 				return starlark.StringDict{
-					ModuleName: Module,
+					ModuleName: module,
 				}, nil
 			case "assert.star":
 				return starlarktest.LoadAssertModule()

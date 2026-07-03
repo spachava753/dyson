@@ -17,18 +17,23 @@ const ModuleName = "glob"
 //go:embed glob.star
 var source string
 
-// Module is the Starlark module namespace exposed by load("glob.star", "glob").
-var Module = loadModule()
+// Module is the default Starlark module namespace exposed by load("glob.star", "glob").
+var Module = MakeModule(stdlibos.Module)
 
-func loadModule() *starlarkstruct.Module {
+// MakeModule returns a Starlark glob module using osModule for filesystem access.
+func MakeModule(osModule *starlarkstruct.Module) *starlarkstruct.Module {
+	return loadModule(osModule)
+}
+
+func loadModule(osModule *starlarkstruct.Module) *starlarkstruct.Module {
 	globals, err := starlark.ExecFileOptions(
-		&syntax.FileOptions{While: true},
+		&syntax.FileOptions{While: true, Recursion: true},
 		&starlark.Thread{Name: ModuleName + ".star"},
 		ModuleName+".star",
 		source,
 		starlark.StringDict{
 			"module": starlark.NewBuiltin("module", starlarkstruct.MakeModule),
-			"os":     stdlibos.Module,
+			"os":     osModule,
 			"re":     stdlibre.Module,
 		},
 	)

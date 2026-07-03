@@ -1,7 +1,7 @@
 # Tests for Dyson's Python-like glob compatibility module.
 #
-# Filesystem-backed glob expansion intentionally waits for os/os.path support,
-# but source-backed module loading and pure pattern escaping are live now.
+# Filesystem-backed glob expansion uses Dyson's narrow os/os.path builtins while
+# the matching and recursion logic stays in this Starlark module.
 
 ---
 # The module exposes Python's public glob helpers as callable functions.
@@ -20,6 +20,17 @@ load("glob.star", "glob")
 assert.eq(glob.escape("*.py"), "[*].py")
 assert.eq(glob.escape("file?.[ch]"), "file[?].[[]ch]")
 assert.eq(glob.escape("plain/name"), "plain/name")
+
+---
+# Filesystem-backed glob expansion uses os.listdir, os.path.lexists, and
+# os.path.isdir while preserving hidden-file and recursive matching behavior.
+load("assert.star", "assert")
+load("glob.star", "glob")
+
+assert.eq(glob.glob(root + sep + "*.txt"), [root + sep + "a.txt"])
+assert.eq(glob.glob(root + sep + "**" + sep + "*.txt", recursive=True), [root + sep + "a.txt", root + sep + "subdir" + sep + "nested.txt"])
+assert.eq(glob.glob(root + sep + "*"), [root + sep + "a.txt", root + sep + "b.py", root + sep + "subdir"])
+assert.eq(glob.glob(root + sep + "*", include_hidden=True), [root + sep + ".hidden", root + sep + "a.txt", root + sep + "b.py", root + sep + "subdir"])
 
 ---
 # dir_fd and root_dir depend on lower-level filesystem policy that Dyson has not

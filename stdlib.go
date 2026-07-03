@@ -13,22 +13,27 @@ import (
 	stdlibsubprocess "github.com/spachava753/dyson/internal/stdlib/subprocess"
 	stdlibtempfile "github.com/spachava753/dyson/internal/stdlib/tempfile"
 	stdlibtime "github.com/spachava753/dyson/internal/stdlib/time"
+	"github.com/spachava753/dyson/internal/xfs"
 	"go.starlark.net/starlark"
 )
 
 // StdlibModules returns Dyson's loadable standard-library compatibility
-// modules, keyed by the Starlark load path. Each call returns a fresh map and a
-// fresh time module so session-local monotonic clocks do not share an origin.
+// modules, keyed by the Starlark load path. Each call returns fresh filesystem
+// backed os/glob modules and a fresh time module so per-session policy and
+// monotonic clocks do not share state.
 func StdlibModules() map[string]starlark.StringDict {
+	osModule := stdlibos.MakeModule(xfs.HostFS{Root: "."})
+	globModule := stdlibglob.MakeModule(osModule)
+
 	return map[string]starlark.StringDict{
 		stdlibglob.ModuleName + ".star": {
-			stdlibglob.ModuleName: stdlibglob.Module,
+			stdlibglob.ModuleName: globModule,
 		},
 		stdlibgrp.ModuleName + ".star": {
 			stdlibgrp.ModuleName: stdlibgrp.Module,
 		},
 		stdlibos.ModuleName + ".star": {
-			stdlibos.ModuleName: stdlibos.Module,
+			stdlibos.ModuleName: osModule,
 		},
 		stdlibpwd.ModuleName + ".star": {
 			stdlibpwd.ModuleName: stdlibpwd.Module,
