@@ -3,7 +3,6 @@ package dyson
 import (
 	"fmt"
 	"io/fs"
-	"maps"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -32,7 +31,7 @@ func TestEvalTestdata(t *testing.T) {
 			m, err := starlarktest.LoadAssertModule()
 			be.Err(t, err, nil)
 			registry := DefaultCodecRegistry()
-			mods := maps.Clone(StdlibModules)
+			mods := StdlibModules()
 			mods[math.Module.Name+".star"] = starlark.StringDict{
 				"math": math.Module,
 			}

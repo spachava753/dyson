@@ -8,12 +8,13 @@ TBD
 
 # Python Stdlib compatibility
 
-Dyson exposes loadable compatibility modules through `dyson.StdlibModules`, a map keyed by Starlark load path:
+Dyson exposes loadable compatibility modules through `dyson.StdlibModules()`, keyed by Starlark load path:
 
 ```go
+modules := dyson.StdlibModules()
 thread := &starlark.Thread{
 	Load: func(thread *starlark.Thread, module string) (starlark.StringDict, error) {
-		globals, ok := dyson.StdlibModules[module]
+		globals, ok := modules[module]
 		if !ok {
 			return nil, fmt.Errorf("unknown module %q", module)
 		}

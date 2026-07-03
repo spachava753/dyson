@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/synctest"
+	gotime "time"
 
 	"github.com/spachava753/dyson/internal/chunkedfile"
 	"go.starlark.net/starlark"
@@ -35,7 +36,7 @@ func newTestThread(t *testing.T) *starlark.Thread {
 			switch name {
 			case ModuleName + ".star":
 				return starlark.StringDict{
-					ModuleName: Module,
+					ModuleName: MakeModule(gotime.Now()),
 				}, nil
 			case "assert.star":
 				return starlarktest.LoadAssertModule()
