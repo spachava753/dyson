@@ -13,6 +13,7 @@ This directory contains loadable Starlark standard-library compatibility modules
 - Put the method's implementation directly in the receiver-aware builtin when it is specific to that method. Use plain package-level helpers only for genuinely shared algorithms; avoid creating trivial receiver methods that bound builtins immediately call through.
 - Use a package-level `Module` value for static immutable module globals.
 - Freeze module values before returning them when they are shared across threads or executions.
+- Catalog-only modules may temporarily use `nil` member values with Python doc-link comments to record planned API surface before implementation. Do not freeze modules containing nil members; replace nil entries with real values and freeze the module when behavior is added.
 
 ## Load Semantics
 

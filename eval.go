@@ -83,11 +83,20 @@ func (s *Sphere) wrapSessionValue(val starlark.Value) starlark.Value {
 	}
 	if module, ok := val.(*starlarkstruct.Module); ok {
 		members := make(starlark.StringDict, len(module.Members))
+		freeze := true
 		for name, member := range module.Members {
+			// Catalog-only stdlib modules use nil values to reserve planned members.
+			if member == nil {
+				freeze = false
+				members[name] = nil
+				continue
+			}
 			members[name] = s.wrapSessionValue(member)
 		}
 		wrapped := &starlarkstruct.Module{Name: module.Name, Members: members}
-		wrapped.Freeze()
+		if freeze {
+			wrapped.Freeze()
+		}
 		return wrapped
 	}
 	return val
