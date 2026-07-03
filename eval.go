@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 
+	"github.com/spachava753/dyson/internal/codec"
 	"go.starlark.net/repl"
 	"go.starlark.net/starlark"
+	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/syntax"
 )
 
@@ -30,16 +32,17 @@ type Sphere struct {
 	replayStep  int
 
 	// codecs controls which Starlark values can cross recorded host boundaries.
-	codecs CodecRegistry
+	codecs codec.Registry
 }
 
 // NewSphere creates a REPL session with the provided print hook, loadable
-// modules, and codec registry. Builtins in the supplied module dictionaries are
-// wrapped per session so calls can be recorded against this session.
+// modules, and codec registry. Builtins in the supplied module dictionaries and
+// nested module namespaces are wrapped per session so calls can be recorded
+// against this session.
 func NewSphere(
 	print func(thread *starlark.Thread, msg string),
 	modules map[string]starlark.StringDict,
-	codecs CodecRegistry,
+	codecs codec.Registry,
 ) *Sphere {
 	fopts := &syntax.FileOptions{
 		Set:               true,
@@ -55,11 +58,7 @@ func NewSphere(
 	for module, sd := range modules {
 		sessionSD := make(starlark.StringDict, len(sd))
 		for member, val := range sd {
-			if b, ok := val.(*starlark.Builtin); ok {
-				sessionSD[member] = &DurableBuiltin{Builtin: b, s: s}
-				continue
-			}
-			sessionSD[member] = val
+			sessionSD[member] = s.wrapSessionValue(val)
 		}
 		sessionModules[module] = sessionSD
 	}
@@ -76,6 +75,22 @@ func NewSphere(
 		},
 	}
 	return s
+}
+
+func (s *Sphere) wrapSessionValue(val starlark.Value) starlark.Value {
+	if b, ok := val.(*starlark.Builtin); ok {
+		return &DurableBuiltin{Builtin: b, s: s}
+	}
+	if module, ok := val.(*starlarkstruct.Module); ok {
+		members := make(starlark.StringDict, len(module.Members))
+		for name, member := range module.Members {
+			members[name] = s.wrapSessionValue(member)
+		}
+		wrapped := &starlarkstruct.Module{Name: module.Name, Members: members}
+		wrapped.Freeze()
+		return wrapped
+	}
+	return val
 }
 
 // Eval executes one submitted Starlark REPL chunk and appends it to the log

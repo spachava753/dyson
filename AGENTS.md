@@ -6,16 +6,14 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 
 ## Project Structure
 
-- `snapshot/` contains the Starlark globals snapshot implementation. Keep the public surface shaped like the standard `encoding/json` package: `snapshot.NewEncoder(w).Encode(globals)` and `snapshot.NewDecoder(r).Decode(&globals)`.
-- `snapshot/snapshot_test.go` contains snapshot and REPL-resume tests. Keep related cases grouped with table tests and `t.Run` rather than adding many one-off test functions.
+- `internal/codec/` contains durable host-call value serialization for record/replay. Keep codec changes local to this package unless a stdlib custom value needs a small registration hook in its own module package.
 - `discovery.md` is informal design/research notes. Update it when learning important Starlark behavior that affects `dyson` design.
 
 ## Go Conventions
 
 - This module targets Go `1.26.4`. Use modern Go idioms available up to that version.
 - Keep changes small and direct. Avoid unnecessary abstractions unless they clarify a real boundary.
-- The snapshot format is currently a private implementation detail. Do not export internal snapshot structs or enum tags unless there is a concrete compatibility requirement.
-- Snapshot encoding must preserve Starlark mutable-container semantics. Lists and dicts form a graph, not just a tree, so object refs/ids are required to preserve aliases and cycles.
+- Durable host-call codecs must preserve enough Starlark value semantics for replay. Container codecs currently serialize trees rather than mutable-container graphs, so aliases and cycles need explicit object refs before they can be preserved across host-call boundaries.
 
 ## Starlark Design Notes
 
@@ -28,6 +26,7 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 
 - Use `github.com/nalgeon/be` for assertions.
 - Prefer Starlark execution-based tests for behavior that is easiest to understand as Starlark code. Put readable scenarios in `testdata` fixtures and use `internal/chunkedfile` with `---` separators when setup/assertion chunks make the test clearer.
+- Root `testdata/*.star` fixtures are REPL scenarios: chunks execute in one durable session, globals persist across chunks, and the final chunk should generally contain assertions after replay. Load modules once in setup and reuse those globals in later chunks unless repeated `load` behavior is the specific thing being tested.
 - Prefer table-driven tests and `t.Run` for related cases.
 - Keep standalone test functions for distinct behavior-level scenarios, such as a REPL resume integration test.
 - Run `go test ./...` after code changes.

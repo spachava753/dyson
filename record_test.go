@@ -6,9 +6,17 @@ import (
 	"testing"
 
 	"github.com/nalgeon/be"
+	"github.com/spachava753/dyson/internal/codec"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarktest"
 )
+
+func mustSerialize(t *testing.T, registry codec.Registry, val starlark.Value) codec.SerializedVal {
+	t.Helper()
+	sv, err := registry.Serialize(val)
+	be.Err(t, err, nil)
+	return sv
+}
 
 func TestRecordTestdata(t *testing.T) {
 	newTestSphere := func(t *testing.T, custom starlark.StringDict) *Sphere {
@@ -23,10 +31,10 @@ func TestRecordTestdata(t *testing.T) {
 		}, DefaultCodecRegistry())
 	}
 	defaultRegistry := DefaultCodecRegistry()
-	tupleVal := func(vals ...starlark.Value) SerializedVal {
+	tupleVal := func(vals ...starlark.Value) codec.SerializedVal {
 		return mustSerialize(t, defaultRegistry, starlark.Tuple(vals))
 	}
-	intVal := func(i int) SerializedVal {
+	intVal := func(i int) codec.SerializedVal {
 		return mustSerialize(t, defaultRegistry, starlark.MakeInt(i))
 	}
 
@@ -53,16 +61,16 @@ result = add(1, 2)
 		be.Equal(t, len(s.log[0].Calls), 1)
 		be.Equal(t, s.log[0].Calls[0], HostCall{
 			FnName: "add",
-			Args: SerializedVal{
+			Args: codec.SerializedVal{
 				Type:    "tuple",
 				Version: 1,
-				List: []SerializedVal{
+				List: []codec.SerializedVal{
 					{Type: "int", Version: 1, Hash: 0x3000014, Data: []byte("1")},
 					{Type: "int", Version: 1, Hash: 0x3c00019, Data: []byte("2")},
 				},
 			},
-			Kwargs:   []SerializedVal{},
-			Response: SerializedVal{Type: "int", Version: 1, Hash: 0x480001e, Data: []byte("3")},
+			Kwargs:   []codec.SerializedVal{},
+			Response: codec.SerializedVal{Type: "int", Version: 1, Hash: 0x480001e, Data: []byte("3")},
 		})
 	})
 
@@ -89,13 +97,13 @@ second = tick("same")
 		be.Equal(t, s.log[0].Calls[0], HostCall{
 			FnName:   "tick",
 			Args:     tupleVal(starlark.String("same")),
-			Kwargs:   []SerializedVal{},
+			Kwargs:   []codec.SerializedVal{},
 			Response: intVal(1),
 		})
 		be.Equal(t, s.log[0].Calls[1], HostCall{
 			FnName:   "tick",
 			Args:     tupleVal(starlark.String("same")),
-			Kwargs:   []SerializedVal{},
+			Kwargs:   []codec.SerializedVal{},
 			Response: intVal(2),
 		})
 	})
@@ -125,13 +133,13 @@ two = echo("second")
 		be.Equal(t, s.log[0].Calls, []HostCall{{
 			FnName:   "echo",
 			Args:     tupleVal(starlark.String("first")),
-			Kwargs:   []SerializedVal{},
+			Kwargs:   []codec.SerializedVal{},
 			Response: mustSerialize(t, defaultRegistry, starlark.String("first")),
 		}})
 		be.Equal(t, s.log[1].Calls, []HostCall{{
 			FnName:   "echo",
 			Args:     tupleVal(starlark.String("second")),
-			Kwargs:   []SerializedVal{},
+			Kwargs:   []codec.SerializedVal{},
 			Response: mustSerialize(t, defaultRegistry, starlark.String("second")),
 		}})
 	})
@@ -156,7 +164,7 @@ seen = kwcount(1, mode="fast")
 		be.Equal(t, s.log[0].Calls[0], HostCall{
 			FnName:   "kwcount",
 			Args:     tupleVal(starlark.MakeInt(1)),
-			Kwargs:   []SerializedVal{tupleVal(starlark.String("mode"), starlark.String("fast"))},
+			Kwargs:   []codec.SerializedVal{tupleVal(starlark.String("mode"), starlark.String("fast"))},
 			Response: intVal(1),
 		})
 	})
@@ -182,7 +190,7 @@ value = mirror([1, "two", True])
 		be.Equal(t, s.log[0].Calls[0], HostCall{
 			FnName:   "mirror",
 			Args:     tupleVal(list),
-			Kwargs:   []SerializedVal{},
+			Kwargs:   []codec.SerializedVal{},
 			Response: mustSerialize(t, defaultRegistry, list),
 		})
 	})
@@ -210,8 +218,8 @@ explode(1)
 		call := s.log[0].Calls[0]
 		be.Equal(t, call.FnName, "explode")
 		be.Equal(t, call.Args, tupleVal(starlark.MakeInt(1)))
-		be.Equal(t, call.Kwargs, []SerializedVal{})
-		be.Equal(t, call.Response, SerializedVal{})
+		be.Equal(t, call.Kwargs, []codec.SerializedVal{})
+		be.Equal(t, call.Response, codec.SerializedVal{})
 		callErr, ok := call.Err.(error)
 		if !ok {
 			t.Fatalf("recorded error has type %T, want error", call.Err)

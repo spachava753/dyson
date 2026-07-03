@@ -23,7 +23,7 @@ func TestEvalTestdata(t *testing.T) {
 		if d.IsDir() {
 			return nil
 		}
-		if !strings.HasSuffix(d.Name(), "_test.star") {
+		if !strings.HasSuffix(d.Name(), ".star") {
 			return nil
 		}
 		t.Run(d.Name(), func(t *testing.T) {

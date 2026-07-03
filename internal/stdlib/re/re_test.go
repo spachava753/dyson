@@ -1,7 +1,6 @@
 package re
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"path/filepath"
@@ -10,7 +9,6 @@ import (
 	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson/internal/chunkedfile"
 	"github.com/spachava753/dyson/internal/xctx"
-	"github.com/spachava753/dyson/snapshot"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarktest"
 	"go.starlark.net/syntax"
@@ -62,51 +60,6 @@ func TestComputeIntensiveBuiltinsReturnContextError(t *testing.T) {
 			be.Err(t, err, context.Canceled)
 		})
 	}
-}
-
-func TestPatternCanBeSnapshotted(t *testing.T) {
-	globals, err := starlark.ExecFileOptions(&syntax.FileOptions{}, newTestThread(t), "test.star", `
-load("re.star", "re")
-pattern = re.compile("x", re.I)
-`, nil)
-	be.Err(t, err, nil)
-
-	var buf bytes.Buffer
-	be.Err(t, snapshot.NewEncoder(&buf).Encode(starlark.StringDict{"pattern": globals["pattern"]}), nil)
-
-	var restored starlark.StringDict
-	be.Err(t, snapshot.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&restored), nil)
-
-	pattern, ok := restored["pattern"].(starlark.HasAttrs)
-	be.True(t, ok)
-	patternText, err := pattern.Attr("pattern")
-	be.Err(t, err, nil)
-	be.Equal(t, patternText, starlark.Value(starlark.String("x")))
-	flags, err := pattern.Attr("flags")
-	be.Err(t, err, nil)
-	be.Equal(t, flags, starlark.Value(starlark.MakeInt(2)))
-}
-
-func TestMatchCanBeSnapshotted(t *testing.T) {
-	globals, err := starlark.ExecFileOptions(&syntax.FileOptions{}, newTestThread(t), "test.star", `
-load("re.star", "re")
-match = re.search("(?P<word>[a-z]+)-(\\d+)", "xx abc-123 yy")
-`, nil)
-	be.Err(t, err, nil)
-
-	var buf bytes.Buffer
-	be.Err(t, snapshot.NewEncoder(&buf).Encode(starlark.StringDict{"match": globals["match"]}), nil)
-
-	var restored starlark.StringDict
-	be.Err(t, snapshot.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&restored), nil)
-
-	match, ok := restored["match"].(starlark.HasAttrs)
-	be.True(t, ok)
-	span, err := match.Attr("span")
-	be.Err(t, err, nil)
-	spanValue, err := starlark.Call(&starlark.Thread{Name: "test"}, span, nil, nil)
-	be.Err(t, err, nil)
-	be.Equal(t, spanValue, starlark.Value(starlark.Tuple{starlark.MakeInt(3), starlark.MakeInt(10)}))
 }
 
 func newTestThread(t *testing.T) *starlark.Thread {

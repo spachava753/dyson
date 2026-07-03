@@ -1,4 +1,4 @@
-package dyson
+package codec
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"go.starlark.net/starlark"
 )
 
-func mustSerialize(t *testing.T, registry CodecRegistry, val starlark.Value) SerializedVal {
+func mustSerialize(t *testing.T, registry Registry, val starlark.Value) SerializedVal {
 	t.Helper()
 	sv, err := registry.Serialize(val)
 	be.Err(t, err, nil)
@@ -17,7 +17,7 @@ func mustSerialize(t *testing.T, registry CodecRegistry, val starlark.Value) Ser
 }
 
 func TestSerializePrimitiveData(t *testing.T) {
-	registry := DefaultCodecRegistry()
+	registry := DefaultRegistry()
 	bigInt := starlark.MakeInt64(1)
 	bigInt = bigInt.Lsh(80)
 
@@ -71,7 +71,7 @@ func (v fallbackCustomValue) Truth() starlark.Bool  { return starlark.Bool(v.pay
 func (v fallbackCustomValue) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable") }
 
 func TestSerializeCustomValueData(t *testing.T) {
-	registry := DefaultCodecRegistry()
+	registry := DefaultRegistry()
 	customType := serializedCustomValue{payload: ""}.Type()
 	registry.Register(ValueCodec{
 		Type:    customType,

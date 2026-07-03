@@ -9,6 +9,8 @@ This directory contains loadable Starlark standard-library compatibility modules
 - Export `var Module = &starlarkstruct.Module{Name: ModuleName, Members: starlark.StringDict{...}}` for immutable module namespaces.
 - Add the module to the root `dyson.StdlibModules` map as `{ModuleName + ".star": {ModuleName: Module}}`.
 - Builtins should be named with fully qualified names such as `ModuleName + ".compile"` so errors read like `re.compile: ...`.
+- For methods on custom Starlark values, follow Go Starlark's native bound-method pattern: keep a package-level static method table of `*starlark.Builtin` values, return `method.BindReceiver(value)` from `Attr`, and read the receiver inside the package-level builtin with `fn.Receiver()`. Avoid allocating per-attribute closure builtins such as `starlark.NewBuiltin("type.method", value.method(name))`.
+- Put the method's implementation directly in the receiver-aware builtin when it is specific to that method. Use plain package-level helpers only for genuinely shared algorithms; avoid creating trivial receiver methods that bound builtins immediately call through.
 - Use a package-level `Module` value for static immutable module globals.
 - Freeze module values before returning them when they are shared across threads or executions.
 
@@ -23,11 +25,11 @@ pattern = re.compile("[a-z]+", re.I | re.M)
 
 The root `dyson.StdlibModules` map contains only namespace symbols for stdlib modules. Direct member imports such as `load("re.star", "compile")` are intentionally unsupported.
 
-## Snapshot Compatibility
+## Durable Values
 
-Durable values returned into user globals should be plain snapshot-supported Starlark values whenever possible: `None`, bool, int, float, string, bytes, tuple, list, dict, and set.
+Durable values returned across recorded host-call boundaries need codecs in `internal/codec` or a small module-local registration hook, such as `time.RegisterStructTimeCodec`. Prefer plain Starlark values (`None`, bool, int, float, string, bytes, tuple, list, dict, and set where supported) when a custom value is not required.
 
-Custom `starlark.Value` implementations are allowed for real module-defined types, but every production custom value returned to Starlark must implement `snapshot.Converter` and the module must register a matching `snapshot.RegisterRestorer` hook. The converter payload should use only snapshot-supported values, and tests should prove the custom value round-trips through `snapshot.NewEncoder` / `snapshot.NewDecoder`.
+Custom `starlark.Value` implementations are allowed for real module-defined types. When they can cross recorded host-call boundaries, add replay coverage in root `testdata/*.star` so the value is serialized during setup chunks and restored before the final assertion chunk.
 
 Avoid defining custom `starlark.Value` implementations for placeholder or scaffold values when a plain supported value would be enough.
 
@@ -47,9 +49,9 @@ Keep module API-surface tests in the module package. Tests should verify:
 - Scripts load symbols with namespace-only imports such as `load("re.star", "re")`.
 - Exported constants and aliases have compatibility-visible values.
 - Intentionally unsupported operations abort with stable module-qualified messages.
-- Any durable values returned by module APIs can round-trip through the root snapshot encoder when relevant.
+- Any durable custom values returned by module APIs have root replay coverage in `testdata/*.star` when relevant.
 
-Prefer Starlark testdata for module behavior. Put user-visible compatibility scenarios in `internal/stdlib/<name>/testdata/*.star` and execute them from a small Go harness in the module package. Keep Go assertions for host integration details that are awkward to express in Starlark, such as module shape, snapshot encoder/decoder integration, deterministic fake-time setup, or low-level Go type checks.
+Prefer Starlark testdata for module behavior. Put user-visible compatibility scenarios in `internal/stdlib/<name>/testdata/*.star` and execute them from a small Go harness in the module package. Keep Go assertions for host integration details that are awkward to express in Starlark, such as module shape, deterministic fake-time setup, or low-level Go type checks.
 
 Write behavior tests for the desired API, not for temporary scaffold behavior. When adding a new module, it is correct and expected for broad compatibility testdata to be red until the implementation catches up. Do not make tests pass by asserting generic placeholder errors such as `"module.fn: not implemented"` for APIs that are intended to be implemented. Only assert error behavior in testdata when the error is the intended public contract, such as an explicitly unsupported Python feature, invalid argument validation, platform/policy limitation, or resource/cancellation failure.
 

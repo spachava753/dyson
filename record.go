@@ -1,15 +1,18 @@
 package dyson
 
-import "go.starlark.net/starlark"
+import (
+	"github.com/spachava753/dyson/internal/codec"
+	"go.starlark.net/starlark"
+)
 
 // HostCall is one recorded crossing from Starlark into a wrapped Go builtin.
 // Args, kwargs, and response are serialized before the event is appended so the
 // log contains durable payloads rather than pointers into the running VM.
 type HostCall struct {
 	FnName   string
-	Args     SerializedVal
-	Kwargs   []SerializedVal
-	Response SerializedVal
+	Args     codec.SerializedVal
+	Kwargs   []codec.SerializedVal
+	Response codec.SerializedVal
 	Err      any
 }
 
@@ -33,9 +36,9 @@ type DurableBuiltin struct {
 // during the chunk can safely attach its event to the last log entry.
 func (s *Sphere) record(
 	fnname string,
-	args SerializedVal,
-	kwargs []SerializedVal,
-	resp SerializedVal,
+	args codec.SerializedVal,
+	kwargs []codec.SerializedVal,
+	resp codec.SerializedVal,
 	respErr error,
 ) {
 	currChunk := s.log[len(s.log)-1]
@@ -67,7 +70,7 @@ func (d *DurableBuiltin) CallInternal(thread *starlark.Thread, args starlark.Tup
 	}
 
 	resp, respErr := d.Builtin.CallInternal(thread, args, kwargs)
-	var serializedResp SerializedVal
+	var serializedResp codec.SerializedVal
 	if resp != nil {
 		serializedResp, err = d.s.codecs.Serialize(resp)
 		if err != nil {
@@ -81,16 +84,16 @@ func (d *DurableBuiltin) CallInternal(thread *starlark.Thread, args starlark.Tup
 // serializeCallInputs validates and serializes inputs before the real host
 // builtin runs. This is important for record-replay: unsupported inputs should
 // fail before an external effect can occur.
-func (s *Sphere) serializeCallInputs(args starlark.Tuple, kwargs []starlark.Tuple) (SerializedVal, []SerializedVal, error) {
+func (s *Sphere) serializeCallInputs(args starlark.Tuple, kwargs []starlark.Tuple) (codec.SerializedVal, []codec.SerializedVal, error) {
 	serializedArgs, err := s.codecs.Serialize(args)
 	if err != nil {
-		return SerializedVal{}, nil, err
+		return codec.SerializedVal{}, nil, err
 	}
-	serializedKwargs := make([]SerializedVal, len(kwargs))
+	serializedKwargs := make([]codec.SerializedVal, len(kwargs))
 	for i, kwarg := range kwargs {
 		serializedKwargs[i], err = s.codecs.Serialize(kwarg)
 		if err != nil {
-			return SerializedVal{}, nil, err
+			return codec.SerializedVal{}, nil, err
 		}
 	}
 	return serializedArgs, serializedKwargs, nil
