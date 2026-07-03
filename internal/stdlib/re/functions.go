@@ -47,7 +47,12 @@ func search(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, 
 	if err := xctx.Check(thread); err != nil {
 		return nil, err
 	}
-	return pattern.search(text, 0, len(text.text)), nil
+	index := pattern.re.FindStringSubmatchIndex(text.text)
+	if index == nil {
+		return starlark.None, nil
+	}
+	shiftIndex(index, text.offset)
+	return &matchValue{pattern: pattern, input: text, endpos: len(text.text), index: index}, nil
 }
 
 // match implements the Starlark re.match builtin, matching only at the start of
@@ -63,7 +68,12 @@ func match(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, k
 	if err := xctx.Check(thread); err != nil {
 		return nil, err
 	}
-	return pattern.match(text, 0, len(text.text)), nil
+	index := pattern.re.FindStringSubmatchIndex(text.text)
+	if index == nil || index[0] != 0 {
+		return starlark.None, nil
+	}
+	shiftIndex(index, text.offset)
+	return &matchValue{pattern: pattern, input: text, endpos: len(text.text), index: index}, nil
 }
 
 // fullMatch implements the Starlark re.fullmatch builtin, requiring the entire
@@ -79,7 +89,12 @@ func fullMatch(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tupl
 	if err := xctx.Check(thread); err != nil {
 		return nil, err
 	}
-	return pattern.fullmatch(text, 0, len(text.text)), nil
+	index := pattern.re.FindStringSubmatchIndex(text.text)
+	if index == nil || index[0] != 0 || index[1] != len(text.text) {
+		return starlark.None, nil
+	}
+	shiftIndex(index, text.offset)
+	return &matchValue{pattern: pattern, input: text, endpos: len(text.text), index: index}, nil
 }
 
 // split implements the Starlark re.split builtin, splitting the string by the
@@ -96,7 +111,7 @@ func split(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, k
 	if err := xctx.Check(thread); err != nil {
 		return nil, err
 	}
-	return pattern.split(thread, text, maxsplit)
+	return splitPattern(thread, pattern, text, maxsplit)
 }
 
 // findAll implements the Starlark re.findall builtin, returning all non-
@@ -113,7 +128,7 @@ func findAll(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple,
 	if err := xctx.Check(thread); err != nil {
 		return nil, err
 	}
-	return pattern.findall(thread, text)
+	return findallPattern(thread, pattern, text)
 }
 
 // findIter implements the Starlark re.finditer builtin, returning a list of
@@ -132,7 +147,7 @@ func findIter(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple
 	if err := xctx.Check(thread); err != nil {
 		return nil, err
 	}
-	return pattern.finditer(thread, text, 0, len(text.text))
+	return finditerPattern(thread, pattern, text, 0, len(text.text))
 }
 
 // sub implements the Starlark re.sub builtin, replacing non-overlapping matches
@@ -146,7 +161,7 @@ func sub(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwa
 	if err != nil {
 		return nil, err
 	}
-	value, _, err := pattern.sub(thread, repl, text, count)
+	value, _, err := subPattern(thread, pattern, repl, text, count)
 	return value, err
 }
 
@@ -160,7 +175,7 @@ func subn(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kw
 	if err != nil {
 		return nil, err
 	}
-	value, n, err := pattern.sub(thread, repl, text, count)
+	value, n, err := subPattern(thread, pattern, repl, text, count)
 	if err != nil {
 		return nil, err
 	}

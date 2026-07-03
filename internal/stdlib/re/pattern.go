@@ -39,7 +39,7 @@ func (p *patternValue) Attr(name string) (starlark.Value, error) {
 	case "groupindex":
 		return p.groupIndex, nil
 	case "search", "match", "fullmatch", "split", "findall", "finditer", "sub", "subn":
-		return starlark.NewBuiltin("re.Pattern."+name, p.method(name)), nil
+		return patternMethods[name].BindReceiver(p), nil
 	}
 	return nil, nil
 }
@@ -47,114 +47,130 @@ func (p *patternValue) Attr(name string) (starlark.Value, error) {
 // AttrNames returns the names discoverable on compiled Pattern values.
 func (p *patternValue) AttrNames() []string { return patternAttrNames }
 
-// method builds the Starlark builtin implementation for a Python-compatible
-// Pattern method name.
-func (p *patternValue) method(name string) func(*starlark.Thread, *starlark.Builtin, starlark.Tuple, []starlark.Tuple) (starlark.Value, error) {
-	return func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-		switch name {
-		case "search", "match", "fullmatch":
-			text, pos, endpos, err := unpackPatternMethodArgs(fn.Name(), args, kwargs)
-			if err != nil {
-				return nil, err
-			}
-			if err := xctx.Check(thread); err != nil {
-				return nil, err
-			}
-			switch name {
-			case "search":
-				return p.search(text, pos, endpos), nil
-			case "match":
-				return p.match(text, pos, endpos), nil
-			default:
-				return p.fullmatch(text, pos, endpos), nil
-			}
-		case "split":
-			text, maxsplit, err := unpackPatternSplitArgs(fn.Name(), args, kwargs)
-			if err != nil {
-				return nil, err
-			}
-			if err := xctx.Check(thread); err != nil {
-				return nil, err
-			}
-			return p.split(thread, text, maxsplit)
-		case "findall", "finditer":
-			text, pos, endpos, err := unpackPatternMethodArgs(fn.Name(), args, kwargs)
-			if err != nil {
-				return nil, err
-			}
-			if err := xctx.Check(thread); err != nil {
-				return nil, err
-			}
-			if name == "findall" {
-				return p.findall(thread, text.window(pos, endpos))
-			}
-			return p.finditer(thread, text, pos, endpos)
-		case "sub", "subn":
-			repl, text, count, err := unpackPatternSubArgs(fn.Name(), args, kwargs)
-			if err != nil {
-				return nil, err
-			}
-			value, n, err := p.sub(thread, repl, text, count)
-			if err != nil {
-				return nil, err
-			}
-			if name == "subn" {
-				return starlark.Tuple{value, starlark.MakeInt(n)}, nil
-			}
-			return value, nil
-		}
-		return nil, nil
+// patternSearch implements Pattern.search.
+func patternSearch(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	p := fn.Receiver().(*patternValue)
+	text, pos, endpos, err := unpackPatternMethodArgs(fn.Name(), args, kwargs)
+	if err != nil {
+		return nil, err
 	}
-}
-
-// search implements Pattern.search, scanning the requested window for the first
-// match and returning either a Match value or None.
-//
-// It mirrors the supported subset of Python's Pattern.search:
-// https://docs.python.org/3/library/re.html#re.Pattern.search
-func (p *patternValue) search(text regexText, pos, endpos int) starlark.Value {
+	if err := xctx.Check(thread); err != nil {
+		return nil, err
+	}
 	index := p.re.FindStringSubmatchIndex(text.text[pos:endpos])
 	if index == nil {
-		return starlark.None
+		return starlark.None, nil
 	}
 	shiftIndex(index, text.offset+pos)
-	return &matchValue{pattern: p, input: text, pos: pos, endpos: endpos, index: index}
+	return &matchValue{pattern: p, input: text, pos: pos, endpos: endpos, index: index}, nil
 }
 
-// match implements Pattern.match, requiring a match at the beginning of the
-// requested window and returning either a Match value or None.
-//
-// It mirrors the supported subset of Python's Pattern.match:
-// https://docs.python.org/3/library/re.html#re.Pattern.match
-func (p *patternValue) match(text regexText, pos, endpos int) starlark.Value {
+// patternMatch implements Pattern.match.
+func patternMatch(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	p := fn.Receiver().(*patternValue)
+	text, pos, endpos, err := unpackPatternMethodArgs(fn.Name(), args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	if err := xctx.Check(thread); err != nil {
+		return nil, err
+	}
 	index := p.re.FindStringSubmatchIndex(text.text[pos:endpos])
 	if index == nil || index[0] != 0 {
-		return starlark.None
+		return starlark.None, nil
 	}
 	shiftIndex(index, text.offset+pos)
-	return &matchValue{pattern: p, input: text, pos: pos, endpos: endpos, index: index}
+	return &matchValue{pattern: p, input: text, pos: pos, endpos: endpos, index: index}, nil
 }
 
-// fullmatch implements Pattern.fullmatch, requiring the requested window to be
-// fully matched and returning either a Match value or None.
-//
-// It mirrors the supported subset of Python's Pattern.fullmatch:
-// https://docs.python.org/3/library/re.html#re.Pattern.fullmatch
-func (p *patternValue) fullmatch(text regexText, pos, endpos int) starlark.Value {
+// patternFullmatch implements Pattern.fullmatch.
+func patternFullmatch(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	p := fn.Receiver().(*patternValue)
+	text, pos, endpos, err := unpackPatternMethodArgs(fn.Name(), args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	if err := xctx.Check(thread); err != nil {
+		return nil, err
+	}
 	index := p.re.FindStringSubmatchIndex(text.text[pos:endpos])
 	if index == nil || index[0] != 0 || index[1] != endpos-pos {
-		return starlark.None
+		return starlark.None, nil
 	}
 	shiftIndex(index, text.offset+pos)
-	return &matchValue{pattern: p, input: text, pos: pos, endpos: endpos, index: index}
+	return &matchValue{pattern: p, input: text, pos: pos, endpos: endpos, index: index}, nil
 }
 
-// split implements Pattern.split, splitting text around non-overlapping matches
-// and including captured groups in the result.
+// patternSplit implements Pattern.split.
+func patternSplit(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	p := fn.Receiver().(*patternValue)
+	text, maxsplit, err := unpackPatternSplitArgs(fn.Name(), args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	if err := xctx.Check(thread); err != nil {
+		return nil, err
+	}
+	return splitPattern(thread, p, text, maxsplit)
+}
+
+// patternFindall implements Pattern.findall.
+func patternFindall(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	p := fn.Receiver().(*patternValue)
+	text, pos, endpos, err := unpackPatternMethodArgs(fn.Name(), args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	if err := xctx.Check(thread); err != nil {
+		return nil, err
+	}
+	return findallPattern(thread, p, text.window(pos, endpos))
+}
+
+// patternFinditer implements Pattern.finditer.
+func patternFinditer(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	p := fn.Receiver().(*patternValue)
+	text, pos, endpos, err := unpackPatternMethodArgs(fn.Name(), args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	if err := xctx.Check(thread); err != nil {
+		return nil, err
+	}
+	return finditerPattern(thread, p, text, pos, endpos)
+}
+
+// patternSub implements Pattern.sub.
+func patternSub(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	p := fn.Receiver().(*patternValue)
+	repl, text, count, err := unpackPatternSubArgs(fn.Name(), args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	value, _, err := subPattern(thread, p, repl, text, count)
+	return value, err
+}
+
+// patternSubn implements Pattern.subn.
+func patternSubn(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	p := fn.Receiver().(*patternValue)
+	repl, text, count, err := unpackPatternSubArgs(fn.Name(), args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	value, n, err := subPattern(thread, p, repl, text, count)
+	if err != nil {
+		return nil, err
+	}
+	return starlark.Tuple{value, starlark.MakeInt(n)}, nil
+}
+
+// splitPattern splits text around non-overlapping matches and includes captured
+// groups in the result.
 //
 // It mirrors the supported subset of Python's Pattern.split:
 // https://docs.python.org/3/library/re.html#re.Pattern.split
-func (p *patternValue) split(thread *starlark.Thread, text regexText, maxsplit int) (*starlark.List, error) {
+func splitPattern(thread *starlark.Thread, p *patternValue, text regexText, maxsplit int) (*starlark.List, error) {
 	matches := p.re.FindAllStringSubmatchIndex(text.text, -1)
 	items := []starlark.Value{}
 	last := 0
@@ -182,12 +198,12 @@ func (p *patternValue) split(thread *starlark.Thread, text regexText, maxsplit i
 	return starlark.NewList(items), nil
 }
 
-// findall implements Pattern.findall, returning all non-overlapping matches as
-// strings, bytes, or tuples depending on the pattern's capturing groups.
+// findallPattern returns all non-overlapping matches as strings, bytes, or
+// tuples depending on the pattern's capturing groups.
 //
 // It mirrors the supported subset of Python's Pattern.findall:
 // https://docs.python.org/3/library/re.html#re.Pattern.findall
-func (p *patternValue) findall(thread *starlark.Thread, text regexText) (*starlark.List, error) {
+func findallPattern(thread *starlark.Thread, p *patternValue, text regexText) (*starlark.List, error) {
 	matches := p.re.FindAllStringSubmatchIndex(text.text, -1)
 	items := make([]starlark.Value, 0, len(matches))
 	for _, index := range matches {
@@ -220,15 +236,15 @@ func (p *patternValue) findall(thread *starlark.Thread, text regexText) (*starla
 	return starlark.NewList(items), nil
 }
 
-// finditer implements Pattern.finditer. Dyson returns a list of Match values
-// for Starlark consumption rather than a lazy Python iterator.
+// finditerPattern implements Pattern.finditer. Dyson returns a list of Match
+// values for Starlark consumption rather than a lazy Python iterator.
 //
 // TODO: Return a Starlark iterator instead of a list; Python's Pattern.finditer
 // returns an iterator.
 //
 // It mirrors the supported subset of Python's Pattern.finditer:
 // https://docs.python.org/3/library/re.html#re.Pattern.finditer
-func (p *patternValue) finditer(thread *starlark.Thread, text regexText, pos, endpos int) (*starlark.List, error) {
+func finditerPattern(thread *starlark.Thread, p *patternValue, text regexText, pos, endpos int) (*starlark.List, error) {
 	window := text.window(pos, endpos)
 	matches := p.re.FindAllStringSubmatchIndex(window.text, -1)
 	items := make([]starlark.Value, 0, len(matches))
@@ -242,12 +258,12 @@ func (p *patternValue) finditer(thread *starlark.Thread, text regexText, pos, en
 	return starlark.NewList(items), nil
 }
 
-// sub implements Pattern.sub and the shared replacement work for Pattern.subn,
+// subPattern implements Pattern.sub and the shared replacement work for subn,
 // returning the substituted value together with the replacement count.
 //
 // It mirrors the supported subset of Python's Pattern.sub:
 // https://docs.python.org/3/library/re.html#re.Pattern.sub
-func (p *patternValue) sub(thread *starlark.Thread, repl starlark.Value, text regexText, count int) (starlark.Value, int, error) {
+func subPattern(thread *starlark.Thread, p *patternValue, repl starlark.Value, text regexText, count int) (starlark.Value, int, error) {
 	matches := p.re.FindAllStringSubmatchIndex(text.text, -1)
 	if count > 0 && len(matches) > count {
 		matches = matches[:count]

@@ -53,6 +53,25 @@ var (
 		"start",
 		"string",
 	}
+	patternMethods = map[string]*starlark.Builtin{
+		"search":    starlark.NewBuiltin("search", patternSearch),
+		"match":     starlark.NewBuiltin("match", patternMatch),
+		"fullmatch": starlark.NewBuiltin("fullmatch", patternFullmatch),
+		"split":     starlark.NewBuiltin("split", patternSplit),
+		"findall":   starlark.NewBuiltin("findall", patternFindall),
+		"finditer":  starlark.NewBuiltin("finditer", patternFinditer),
+		"sub":       starlark.NewBuiltin("sub", patternSub),
+		"subn":      starlark.NewBuiltin("subn", patternSubn),
+	}
+	matchMethods = map[string]*starlark.Builtin{
+		"expand":    starlark.NewBuiltin("expand", matchExpand),
+		"group":     starlark.NewBuiltin("group", matchGroup),
+		"groups":    starlark.NewBuiltin("groups", matchGroups),
+		"groupdict": starlark.NewBuiltin("groupdict", matchGroupdict),
+		"start":     starlark.NewBuiltin("start", matchStart),
+		"end":       starlark.NewBuiltin("end", matchEnd),
+		"span":      starlark.NewBuiltin("span", matchSpanMethod),
+	}
 )
 
 // Module is the Starlark module namespace exposed by load("re.star", "re").

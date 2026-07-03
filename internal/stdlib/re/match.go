@@ -49,7 +49,7 @@ func (m *matchValue) Attr(name string) (starlark.Value, error) {
 	case "string":
 		return m.input.value, nil
 	case "expand", "group", "groups", "groupdict", "start", "end", "span":
-		return starlark.NewBuiltin("re.Match."+name, m.method(name)), nil
+		return matchMethods[name].BindReceiver(m), nil
 	}
 	return nil, nil
 }
@@ -57,103 +57,131 @@ func (m *matchValue) Attr(name string) (starlark.Value, error) {
 // AttrNames returns the names discoverable on Match values.
 func (m *matchValue) AttrNames() []string { return matchAttrNames }
 
-// method builds the Starlark builtin implementation for a Python-compatible
-// Match method name.
-func (m *matchValue) method(name string) func(*starlark.Thread, *starlark.Builtin, starlark.Tuple, []starlark.Tuple) (starlark.Value, error) {
-	return func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-		switch name {
-		case "expand":
-			var templateValue starlark.Value
-			if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "template", &templateValue); err != nil {
-				return nil, err
-			}
-			template, err := regexTextFromValue(fn.Name(), "template", templateValue)
-			if err != nil {
-				return nil, err
-			}
-			if err := xctx.Check(thread); err != nil {
-				return nil, err
-			}
-			return template.starlarkValue(expandReplacement(template.text, m)), nil
-		case "group":
-			if len(args) == 0 && len(kwargs) == 0 {
-				return m.group(0)
-			}
-			if len(kwargs) > 0 {
-				return nil, fmt.Errorf("%s: unexpected keyword arguments", fn.Name())
-			}
-			values := make(starlark.Tuple, len(args))
-			for i, arg := range args {
-				if err := xctx.Check(thread); err != nil {
-					return nil, err
-				}
-				group, err := m.groupByValue(arg)
-				if err != nil {
-					return nil, err
-				}
-				values[i] = group
-			}
-			if len(values) == 1 {
-				return values[0], nil
-			}
-			return values, nil
-		case "groups":
-			var defaultValue starlark.Value = starlark.None
-			if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "default?", &defaultValue); err != nil {
-				return nil, err
-			}
-			items := make(starlark.Tuple, m.pattern.groups)
-			for group := 1; group <= m.pattern.groups; group++ {
-				if err := xctx.Check(thread); err != nil {
-					return nil, err
-				}
-				value, _ := m.group(group)
-				if value == starlark.None {
-					value = defaultValue
-				}
-				items[group-1] = value
-			}
-			return items, nil
-		case "groupdict":
-			var defaultValue starlark.Value = starlark.None
-			if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "default?", &defaultValue); err != nil {
-				return nil, err
-			}
-			dict := starlark.NewDict(m.pattern.groupIndex.Len())
-			for i, name := range m.pattern.groupNames {
-				if err := xctx.Check(thread); err != nil {
-					return nil, err
-				}
-				if i == 0 || name == "" {
-					continue
-				}
-				value, _ := m.group(i)
-				if value == starlark.None {
-					value = defaultValue
-				}
-				mustSet(dict, name, value)
-			}
-			return dict, nil
-		case "start", "end", "span":
-			group, err := unpackOptionalGroup(fn.Name(), args, kwargs)
-			if err != nil {
-				return nil, err
-			}
-			start, end, err := m.spanForValue(group)
-			if err != nil {
-				return nil, err
-			}
-			switch name {
-			case "start":
-				return starlark.MakeInt(start), nil
-			case "end":
-				return starlark.MakeInt(end), nil
-			default:
-				return starlark.Tuple{starlark.MakeInt(start), starlark.MakeInt(end)}, nil
-			}
-		}
-		return nil, nil
+// matchExpand implements Match.expand.
+func matchExpand(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	m := fn.Receiver().(*matchValue)
+	var templateValue starlark.Value
+	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "template", &templateValue); err != nil {
+		return nil, err
 	}
+	template, err := regexTextFromValue(fn.Name(), "template", templateValue)
+	if err != nil {
+		return nil, err
+	}
+	if err := xctx.Check(thread); err != nil {
+		return nil, err
+	}
+	return template.starlarkValue(expandReplacement(template.text, m)), nil
+}
+
+// matchGroup implements Match.group.
+func matchGroup(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	m := fn.Receiver().(*matchValue)
+	if len(args) == 0 && len(kwargs) == 0 {
+		return m.group(0)
+	}
+	if len(kwargs) > 0 {
+		return nil, fmt.Errorf("%s: unexpected keyword arguments", fn.Name())
+	}
+	values := make(starlark.Tuple, len(args))
+	for i, arg := range args {
+		if err := xctx.Check(thread); err != nil {
+			return nil, err
+		}
+		group, err := m.groupByValue(arg)
+		if err != nil {
+			return nil, err
+		}
+		values[i] = group
+	}
+	if len(values) == 1 {
+		return values[0], nil
+	}
+	return values, nil
+}
+
+// matchGroups implements Match.groups.
+func matchGroups(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	m := fn.Receiver().(*matchValue)
+	var defaultValue starlark.Value = starlark.None
+	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "default?", &defaultValue); err != nil {
+		return nil, err
+	}
+	items := make(starlark.Tuple, m.pattern.groups)
+	for group := 1; group <= m.pattern.groups; group++ {
+		if err := xctx.Check(thread); err != nil {
+			return nil, err
+		}
+		value, _ := m.group(group)
+		if value == starlark.None {
+			value = defaultValue
+		}
+		items[group-1] = value
+	}
+	return items, nil
+}
+
+// matchGroupdict implements Match.groupdict.
+func matchGroupdict(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	m := fn.Receiver().(*matchValue)
+	var defaultValue starlark.Value = starlark.None
+	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "default?", &defaultValue); err != nil {
+		return nil, err
+	}
+	dict := starlark.NewDict(m.pattern.groupIndex.Len())
+	for i, name := range m.pattern.groupNames {
+		if err := xctx.Check(thread); err != nil {
+			return nil, err
+		}
+		if i == 0 || name == "" {
+			continue
+		}
+		value, _ := m.group(i)
+		if value == starlark.None {
+			value = defaultValue
+		}
+		mustSet(dict, name, value)
+	}
+	return dict, nil
+}
+
+// matchStart implements Match.start.
+func matchStart(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	start, _, err := matchSpan(thread, fn, args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	return starlark.MakeInt(start), nil
+}
+
+// matchEnd implements Match.end.
+func matchEnd(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	_, end, err := matchSpan(thread, fn, args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	return starlark.MakeInt(end), nil
+}
+
+// matchSpanMethod implements Match.span.
+func matchSpanMethod(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	start, end, err := matchSpan(thread, fn, args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	return starlark.Tuple{starlark.MakeInt(start), starlark.MakeInt(end)}, nil
+}
+
+func matchSpan(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (int, int, error) {
+	m := fn.Receiver().(*matchValue)
+	group, err := unpackOptionalGroup(fn.Name(), args, kwargs)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := xctx.Check(thread); err != nil {
+		return 0, 0, err
+	}
+	return m.spanForValue(group)
 }
 
 // groupByValue implements Match.group lookup for an integer or named group
