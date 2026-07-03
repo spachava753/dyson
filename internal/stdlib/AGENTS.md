@@ -6,7 +6,7 @@ This directory contains loadable Starlark standard-library compatibility modules
 
 - Put each module in its own package under `internal/stdlib/<name>`.
 - Export `const ModuleName = "<name>"`.
-- Export `var Module = &starlarkstruct.Module{Name: ModuleName, Members: starlark.StringDict{...}}` for static immutable module namespaces, or `func MakeModule(...) *starlarkstruct.Module` when a module needs per-session state.
+- Export `var Module = &starlarkstruct.Module{Name: ModuleName, Members: starlark.StringDict{...}}` for static immutable module namespaces, load an embedded Starlark source file into `var Module` when most behavior is clearer in Starlark, or `func MakeModule(...) *starlarkstruct.Module` when a module needs per-session state.
 - Add the module to the root `dyson.StdlibModules()` factory as `{ModuleName + ".star": {ModuleName: Module}}` or by calling its module factory.
 - Builtins should be named with fully qualified names such as `ModuleName + ".compile"` so errors read like `re.compile: ...`.
 - For methods on custom Starlark values, follow Go Starlark's native bound-method pattern: keep a package-level static method table of `*starlark.Builtin` values, return `method.BindReceiver(value)` from `Attr`, and read the receiver inside the package-level builtin with `fn.Receiver()`. Avoid allocating per-attribute closure builtins such as `starlark.NewBuiltin("type.method", value.method(name))`.
