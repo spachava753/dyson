@@ -6,23 +6,22 @@ This directory contains loadable Starlark standard-library compatibility modules
 
 - Put each module in its own package under `internal/stdlib/<name>`.
 - Export `const ModuleName = "<name>"`.
-- Export `func LoadModule() (starlark.StringDict, error)`.
-- `LoadModule` should return a single-entry dict shaped as `{ModuleName: *starlarkstruct.Module}`.
-- The `starlarkstruct.Module` should use `Name: ModuleName` and `Members: starlark.StringDict{...}`.
+- Export `var Module = &starlarkstruct.Module{Name: ModuleName, Members: starlark.StringDict{...}}` for immutable module namespaces.
+- Add the module to the root `dyson.StdlibModules` map as `{ModuleName + ".star": {ModuleName: Module}}`.
 - Builtins should be named with fully qualified names such as `ModuleName + ".compile"` so errors read like `re.compile: ...`.
-- Cache immutable module globals with `sync.OnceValue` or an equivalent concurrency-safe one-time initializer.
+- Use a package-level `Module` value for static immutable module globals.
 - Freeze module values before returning them when they are shared across threads or executions.
 
 ## Load Semantics
 
-Go Starlark `load` imports named symbols; bare `load("re.star")` is invalid. For Python-like namespacing, expose the module namespace as a symbol and import it explicitly:
+Callers should pass `dyson.StdlibModules` into `NewSphere` or their own Starlark load implementation. Go Starlark `load` imports named symbols; bare `load("re.star")` is invalid. For Python-like namespacing, expose the module namespace as a symbol and import it explicitly:
 
 ```python
 load("re.star", "re")
 pattern = re.compile("[a-z]+", re.I | re.M)
 ```
 
-The root `dyson.Load` function returns only the namespace symbol for stdlib modules. Direct member imports such as `load("re.star", "compile")` are intentionally unsupported.
+The root `dyson.StdlibModules` map contains only namespace symbols for stdlib modules. Direct member imports such as `load("re.star", "compile")` are intentionally unsupported.
 
 ## Snapshot Compatibility
 
@@ -44,13 +43,13 @@ For future APIs where failures are expected and recoverable, prefer explicit dat
 
 Keep module API-surface tests in the module package. Tests should verify:
 
-- `LoadModule` returns the `{ModuleName: *starlarkstruct.Module}` shape.
+- `Module` exposes the expected namespace members and attributes.
 - Scripts load symbols with namespace-only imports such as `load("re.star", "re")`.
 - Exported constants and aliases have compatibility-visible values.
 - Intentionally unsupported operations abort with stable module-qualified messages.
 - Any durable values returned by module APIs can round-trip through the root snapshot encoder when relevant.
 
-Prefer Starlark testdata for module behavior. Put user-visible compatibility scenarios in `internal/stdlib/<name>/testdata/*.star` and execute them from a small Go harness in the module package. Keep Go assertions for host integration details that are awkward to express in Starlark, such as `LoadModule` shape, snapshot encoder/decoder integration, deterministic fake-time setup, or low-level Go type checks.
+Prefer Starlark testdata for module behavior. Put user-visible compatibility scenarios in `internal/stdlib/<name>/testdata/*.star` and execute them from a small Go harness in the module package. Keep Go assertions for host integration details that are awkward to express in Starlark, such as module shape, snapshot encoder/decoder integration, deterministic fake-time setup, or low-level Go type checks.
 
 Write behavior tests for the desired API, not for temporary scaffold behavior. When adding a new module, it is correct and expected for broad compatibility testdata to be red until the implementation catches up. Do not make tests pass by asserting generic placeholder errors such as `"module.fn: not implemented"` for APIs that are intended to be implemented. Only assert error behavior in testdata when the error is the intended public contract, such as an explicitly unsupported Python feature, invalid argument validation, platform/policy limitation, or resource/cancellation failure.
 

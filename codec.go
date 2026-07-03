@@ -12,10 +12,20 @@ import (
 // ValueCodec converts one Starlark value type to and from a versioned
 // SerializedVal. Built-in values and custom values use the same registry path.
 type ValueCodec struct {
-	Type      string
-	Version   int
+	// Type is the exact Starlark type string returned by starlark.Value.Type.
+	Type string
+
+	// Version identifies the SerializedVal payload format for this type.
+	Version int
+
+	// Serialize converts a live Starlark value into durable form. Implementations
+	// may leave Type and Version empty; CodecRegistry.Serialize fills them from
+	// the registered codec.
 	Serialize func(starlark.Value) (SerializedVal, error)
-	Restore   func(SerializedVal) (starlark.Value, error)
+
+	// Restore reconstructs a live Starlark value from durable form after the
+	// registry has already verified Type and Version.
+	Restore func(SerializedVal) (starlark.Value, error)
 }
 
 // CodecRegistry is the per-session table of supported durable value types.
@@ -23,11 +33,13 @@ type ValueCodec struct {
 // registered codec in the session registry.
 type CodecRegistry map[string]ValueCodec
 
-// Register installs or replaces a codec in the registry.
+// Register installs or replaces a codec in the registry. The registry map must
+// already be initialized, as with any direct Go map assignment.
 func (r CodecRegistry) Register(codec ValueCodec) {
 	r[codec.Type] = codec
 }
 
+// codecForValue finds the codec keyed by the value's Starlark type string.
 func (r CodecRegistry) codecForValue(val starlark.Value) (ValueCodec, bool) {
 	codec, ok := r[val.Type()]
 	return codec, ok
@@ -47,6 +59,8 @@ func (r CodecRegistry) Restore(val SerializedVal) (starlark.Value, error) {
 	return codec.Restore(val)
 }
 
+// serializeIndexable serializes tuple/list-like values by recursively encoding
+// each element into SerializedVal.List.
 func (r CodecRegistry) serializeIndexable(val starlark.Value) (SerializedVal, error) {
 	v, ok := val.(starlark.Indexable)
 	if !ok {
@@ -66,6 +80,7 @@ func (r CodecRegistry) serializeIndexable(val starlark.Value) (SerializedVal, er
 	return sv, nil
 }
 
+// restoreList restores a sequence of serialized values for tuple/list codecs.
 func (r CodecRegistry) restoreList(vals []SerializedVal) ([]starlark.Value, error) {
 	items := make([]starlark.Value, len(vals))
 	for i, val := range vals {
@@ -78,6 +93,8 @@ func (r CodecRegistry) restoreList(vals []SerializedVal) ([]starlark.Value, erro
 	return items, nil
 }
 
+// serializeDict serializes mapping items into parallel key/value arrays so each
+// key and value can use its own registered codec.
 func (r CodecRegistry) serializeDict(val starlark.Value) (SerializedVal, error) {
 	v, ok := val.(starlark.IterableMapping)
 	if !ok {
@@ -104,6 +121,8 @@ func (r CodecRegistry) serializeDict(val starlark.Value) (SerializedVal, error) 
 	return sv, nil
 }
 
+// restoreDict rebuilds a Starlark dict from the parallel key/value arrays used
+// by serializeDict.
 func (r CodecRegistry) restoreDict(val SerializedVal) (starlark.Value, error) {
 	if len(val.DictKeys) != len(val.DictValues) {
 		return nil, fmt.Errorf("dyson: dict has %d keys and %d values", len(val.DictKeys), len(val.DictValues))
@@ -125,6 +144,8 @@ func (r CodecRegistry) restoreDict(val SerializedVal) (starlark.Value, error) {
 	return dict, nil
 }
 
+// scalarSerializedVal stores codec-owned scalar bytes alongside optional hash
+// metadata for values that Starlark can hash.
 func scalarSerializedVal(val starlark.Value, data []byte) SerializedVal {
 	sv := serializeHashable(val)
 	sv.Data = data

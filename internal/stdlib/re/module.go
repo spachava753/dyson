@@ -1,8 +1,6 @@
 package re
 
 import (
-	"sync"
-
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 )
@@ -57,8 +55,10 @@ var (
 	}
 )
 
-var module = sync.OnceValue(func() starlark.StringDict {
-	members := starlark.StringDict{
+// Module is the Starlark module namespace exposed by load("re.star", "re").
+var Module = &starlarkstruct.Module{
+	Name: ModuleName,
+	Members: starlark.StringDict{
 		"compile":   starlark.NewBuiltin(ModuleName+".compile", compile),
 		"search":    starlark.NewBuiltin(ModuleName+".search", search),
 		"match":     starlark.NewBuiltin(ModuleName+".match", match),
@@ -87,16 +87,11 @@ var module = sync.OnceValue(func() starlark.StringDict {
 		"VERBOSE":    starlark.MakeInt(flagVerbose),
 		"X":          starlark.MakeInt(flagVerbose),
 		"DEBUG":      starlark.MakeInt(flagDebug),
-	}
+	},
+}
 
-	module := &starlarkstruct.Module{Name: ModuleName, Members: members}
-	module.Freeze()
-	return starlark.StringDict{ModuleName: module}
-})
-
-// LoadModule returns Dyson's Python-compatible re module.
-func LoadModule() (starlark.StringDict, error) {
-	return module(), nil
+func init() {
+	Module.Freeze()
 }
 
 func mustSet(dict *starlark.Dict, key string, value starlark.Value) {

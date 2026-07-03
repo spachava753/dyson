@@ -12,24 +12,9 @@ import (
 	"github.com/spachava753/dyson/internal/xctx"
 	"github.com/spachava753/dyson/snapshot"
 	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/starlarktest"
 	"go.starlark.net/syntax"
 )
-
-func TestLoadModuleShape(t *testing.T) {
-	globals, err := LoadModule()
-	be.Err(t, err, nil)
-	be.Equal(t, len(globals), 1)
-
-	module, ok := globals[ModuleName].(*starlarkstruct.Module)
-	be.True(t, ok)
-	be.True(t, module != nil)
-
-	compile, err := module.Attr("compile")
-	be.Err(t, err, nil)
-	be.True(t, compile != nil)
-}
 
 func TestReTestdata(t *testing.T) {
 	filename := filepath.Join("testdata", "re.star")
@@ -69,10 +54,11 @@ func TestComputeIntensiveBuiltinsReturnContextError(t *testing.T) {
 			cancel()
 			thread := newTestThread(t)
 			xctx.WithContext(thread, ctx)
-			globals, err := LoadModule()
-			be.Err(t, err, nil)
+			globals := starlark.StringDict{
+				ModuleName: Module,
+			}
 
-			_, err = starlark.EvalOptions(&syntax.FileOptions{}, thread, "test.star", tt.src, globals)
+			_, err := starlark.EvalOptions(&syntax.FileOptions{}, thread, "test.star", tt.src, globals)
 			be.Err(t, err, context.Canceled)
 		})
 	}
@@ -129,7 +115,9 @@ func newTestThread(t *testing.T) *starlark.Thread {
 		Load: func(thread *starlark.Thread, name string) (starlark.StringDict, error) {
 			switch name {
 			case ModuleName + ".star":
-				return LoadModule()
+				return starlark.StringDict{
+					ModuleName: Module,
+				}, nil
 			case "assert.star":
 				return starlarktest.LoadAssertModule()
 			default:

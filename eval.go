@@ -10,17 +10,27 @@ import (
 )
 
 // Sphere owns one durable REPL session: the Starlark thread, globals, parser
-// options, and the append-only chunk/event log produced by evaluation.
+// options, codec registry, and the append-only chunk/event log produced by
+// evaluation.
 type Sphere struct {
+	// log is the durable transcript of submitted chunks and recorded host calls.
 	log []ReplChunk
 
-	t           *starlark.Thread
-	g           starlark.StringDict
-	fopts       *syntax.FileOptions
+	// t and g are the live Starlark VM state for incremental REPL execution.
+	t *starlark.Thread
+	g starlark.StringDict
+
+	// fopts defines the Starlark dialect Dyson accepts for every chunk.
+	fopts *syntax.FileOptions
+
+	// replaying switches wrapped builtins from executing host code to consuming
+	// previously recorded calls from log[replayChunk].Calls[replayStep].
 	replaying   bool
 	replayChunk int
 	replayStep  int
-	codecs      CodecRegistry
+
+	// codecs controls which Starlark values can cross recorded host boundaries.
+	codecs CodecRegistry
 }
 
 // NewSphere creates a REPL session with the provided print hook, loadable
@@ -85,8 +95,19 @@ func (s *Sphere) Eval(ctx context.Context, code string) error {
 	return starlark.ExecREPLChunk(f, s.t, s.g)
 }
 
+// Log returns the session's recorded chunks and host-call events in evaluation
+// order. The returned slice is the live log backing store; callers that need an
+// immutable snapshot should copy it before retaining or modifying it.
 func (s *Sphere) Log() []ReplChunk { return s.log }
 
+// Replay rebuilds an empty session by executing each recorded chunk and
+// satisfying wrapped host builtin calls from the supplied log instead of calling
+// through to the host again. Replay fails if the receiver already has a log,
+// because mixing existing execution history with a replay transcript would make
+// the replay cursors ambiguous.
+//
+// Like Eval, Replay currently reserves ctx for the future executor layer because
+// starlark.ExecREPLChunk does not accept a context.
 func (s *Sphere) Replay(ctx context.Context, log []ReplChunk) error {
 	s.replaying = true
 	if len(s.log) != 0 {

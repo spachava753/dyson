@@ -1,8 +1,6 @@
 package time
 
 import (
-	"sync"
-
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 )
@@ -10,9 +8,10 @@ import (
 // ModuleName is the Starlark stdlib module name for Dyson's time compatibility module.
 const ModuleName = "time"
 
-// module lazily builds the frozen time module namespace exposed by load("time.star", "time").
-var module = sync.OnceValue(func() starlark.StringDict {
-	members := starlark.StringDict{
+// Module is the Starlark module namespace exposed by load("time.star", "time").
+var Module = &starlarkstruct.Module{
+	Name: ModuleName,
+	Members: starlark.StringDict{
 		"time":            starlark.NewBuiltin(ModuleName+".time", timeBuiltin),
 		"time_ns":         starlark.NewBuiltin(ModuleName+".time_ns", timeNSBuiltin),
 		"monotonic":       starlark.NewBuiltin(ModuleName+".monotonic", monotonicBuiltin),
@@ -39,14 +38,9 @@ var module = sync.OnceValue(func() starlark.StringDict {
 		"altzone":  starlark.MakeInt(0),
 		"daylight": starlark.MakeInt(0),
 		"tzname":   starlark.Tuple{starlark.String("UTC"), starlark.String("UTC")},
-	}
+	},
+}
 
-	module := &starlarkstruct.Module{Name: ModuleName, Members: members}
-	module.Freeze()
-	return starlark.StringDict{ModuleName: module}
-})
-
-// LoadModule returns Dyson's Python-compatible time module.
-func LoadModule() (starlark.StringDict, error) {
-	return module(), nil
+func init() {
+	Module.Freeze()
 }
