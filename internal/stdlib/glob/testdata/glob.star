@@ -1,6 +1,6 @@
 # Tests for Dyson's Python-like glob compatibility module.
 #
-# Filesystem-backed glob expansion uses Dyson's narrow os/os.path builtins while
+# Filesystem-backed glob expansion uses Dyson's narrow os/os.path primitives while
 # the matching and recursion logic stays in this Starlark module.
 
 ---

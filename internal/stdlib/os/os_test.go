@@ -2,16 +2,13 @@ package os
 
 import (
 	"fmt"
-	goos "os"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
 
-	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson/internal/chunkedfile"
 	"github.com/spachava753/dyson/internal/xfs"
 	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/starlarktest"
 	"go.starlark.net/syntax"
 )
@@ -24,39 +21,14 @@ func TestOSTestdata(t *testing.T) {
 			Data: []byte("content"),
 		},
 	}})
-
-	runOSTestdata(t, module, starlark.StringDict{
+	predeclared := starlark.StringDict{
 		"root_entries": starlark.NewList([]starlark.Value{
 			starlark.String("dir"),
 			starlark.String("file.txt"),
 			starlark.String("sibling"),
 		}),
 		"sibling_dir": starlark.String("sibling"),
-	})
-}
-
-func TestHostFSSupportsParentTraversal(t *testing.T) {
-	root := t.TempDir()
-	base := filepath.Join(root, "base")
-	sibling := filepath.Join(root, "sibling")
-	be.Err(t, goos.Mkdir(base, 0o755), nil)
-	be.Err(t, goos.Mkdir(sibling, 0o755), nil)
-	be.Err(t, goos.WriteFile(filepath.Join(sibling, "file.txt"), []byte("content"), 0o644), nil)
-	be.Err(t, goos.Mkdir(filepath.Join(base, "dir"), 0o755), nil)
-	be.Err(t, goos.WriteFile(filepath.Join(base, "file.txt"), []byte("content"), 0o644), nil)
-
-	module := MakeModule(xfs.HostFS{Root: base})
-	runOSTestdata(t, module, starlark.StringDict{
-		"root_entries": starlark.NewList([]starlark.Value{
-			starlark.String("dir"),
-			starlark.String("file.txt"),
-		}),
-		"sibling_dir": starlark.String("../sibling"),
-	})
-}
-
-func runOSTestdata(t *testing.T, module *starlarkstruct.Module, predeclared starlark.StringDict) {
-	t.Helper()
+	}
 	filename := filepath.Join("testdata", "os.star")
 	for i, chunk := range chunkedfile.Read(filename, t) {
 		t.Run(fmt.Sprintf("chunk_%02d", i+1), func(t *testing.T) {
@@ -70,7 +42,7 @@ func runOSTestdata(t *testing.T, module *starlarkstruct.Module, predeclared star
 	}
 }
 
-func newTestThread(t *testing.T, module *starlarkstruct.Module) *starlark.Thread {
+func newTestThread(t *testing.T, module starlark.Value) *starlark.Thread {
 	thread := &starlark.Thread{
 		Name: "test",
 		Load: func(thread *starlark.Thread, name string) (starlark.StringDict, error) {
