@@ -1,9 +1,13 @@
 package xos
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 )
 
@@ -29,6 +33,40 @@ type Process interface {
 	Getegid() int
 	Getgroups() ([]int, error)
 	Umask(mask int) int
+}
+
+// Command describes one subprocess execution request.
+type Command struct {
+	Args   []string
+	Shell  bool
+	Input  []byte
+	Env    []string
+	Dir    string
+	Stdin  StreamMode
+	Stdout StreamMode
+	Stderr StreamMode
+}
+
+// StreamMode describes how a subprocess standard stream is connected.
+type StreamMode int
+
+const (
+	StreamInherit StreamMode = iota
+	StreamPipe
+	StreamDiscard
+	StreamStdout
+)
+
+// CommandResult is the completed result of a subprocess execution.
+type CommandResult struct {
+	ReturnCode int
+	Stdout     []byte
+	Stderr     []byte
+}
+
+// CommandRunner controls subprocess command execution.
+type CommandRunner interface {
+	RunCommand(Command) (CommandResult, error)
 }
 
 // WorkingDir controls process working-directory-like operations.
@@ -153,6 +191,106 @@ func (Host) Getgroups() ([]int, error) { return os.Getgroups() }
 
 // Umask changes the host process umask and returns the previous value.
 func (Host) Umask(mask int) int { return syscall.Umask(mask) }
+
+// RunCommand executes a host subprocess and captures requested streams.
+func (Host) RunCommand(command Command) (CommandResult, error) {
+	if len(command.Args) == 0 {
+		return CommandResult{}, exec.ErrNotFound
+	}
+
+	var cmd *exec.Cmd
+	if command.Shell {
+		if runtime.GOOS == "windows" {
+			cmd = exec.Command("cmd", append([]string{"/C", command.Args[0]}, command.Args[1:]...)...)
+		} else {
+			cmd = exec.Command("/bin/sh", append([]string{"-c", command.Args[0]}, command.Args[1:]...)...)
+		}
+	} else {
+		path := command.Args[0]
+		if command.Env != nil && !strings.ContainsAny(path, `/\\`) {
+			resolved, err := lookPathInEnv(path, command.Env)
+			if err != nil {
+				return CommandResult{}, err
+			}
+			path = resolved
+		}
+		cmd = exec.Command(path, command.Args[1:]...)
+	}
+	if command.Dir != "" {
+		cmd.Dir = command.Dir
+	}
+	if command.Env != nil {
+		cmd.Env = command.Env
+	}
+	if command.Input != nil {
+		cmd.Stdin = bytes.NewReader(command.Input)
+	} else {
+		switch command.Stdin {
+		case StreamDiscard, StreamPipe:
+			cmd.Stdin = bytes.NewReader(nil)
+		default:
+			cmd.Stdin = os.Stdin
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	switch command.Stdout {
+	case StreamPipe:
+		cmd.Stdout = &stdout
+	case StreamDiscard:
+		cmd.Stdout = io.Discard
+	default:
+		cmd.Stdout = os.Stdout
+	}
+	switch command.Stderr {
+	case StreamPipe:
+		cmd.Stderr = &stderr
+	case StreamDiscard:
+		cmd.Stderr = io.Discard
+	case StreamStdout:
+		cmd.Stderr = cmd.Stdout
+	default:
+		cmd.Stderr = os.Stderr
+	}
+
+	result := CommandResult{}
+	if err := cmd.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			result.ReturnCode = exit.ExitCode()
+		} else {
+			return CommandResult{}, err
+		}
+	}
+	if command.Stdout == StreamPipe {
+		result.Stdout = stdout.Bytes()
+	}
+	if command.Stderr == StreamPipe {
+		result.Stderr = stderr.Bytes()
+	}
+	return result, nil
+}
+
+func lookPathInEnv(file string, env []string) (string, error) {
+	pathList := ""
+	for _, kv := range env {
+		key, value, found := strings.Cut(kv, "=")
+		if found && key == "PATH" {
+			pathList = value
+			break
+		}
+	}
+	for _, dir := range filepath.SplitList(pathList) {
+		if dir == "" {
+			dir = "."
+		}
+		path := filepath.Join(dir, file)
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return path, nil
+		}
+	}
+	return "", exec.ErrNotFound
+}
 
 // Getwd returns the current host working directory.
 func (Host) Getwd() (string, error) { return os.Getwd() }

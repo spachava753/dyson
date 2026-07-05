@@ -8,7 +8,7 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 
 - `internal/codec/` contains durable host-call value serialization for record/replay. Keep codec changes local to this package unless a stdlib custom value needs a small registration hook in its own module package.
 - `internal/xfs/` contains filesystem and path-capability seams used by stdlib modules. Keep environment, process, and platform concerns out of this package.
-- `internal/xos/` contains host OS seams that are not filesystem-specific, such as environment, process, working-directory, and platform capabilities.
+- `internal/xos/` contains host OS seams that are not filesystem-specific, such as environment, process, command execution, working-directory, and platform capabilities.
 - `discovery.md` is informal design/research notes. Update it when learning important Starlark behavior that affects `dyson` design.
 
 ## Go Conventions

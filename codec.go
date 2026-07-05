@@ -3,6 +3,7 @@ package dyson
 import (
 	"github.com/spachava753/dyson/internal/codec"
 	stdlibre "github.com/spachava753/dyson/internal/stdlib/re"
+	stdlibsubprocess "github.com/spachava753/dyson/internal/stdlib/subprocess"
 	stdlibtime "github.com/spachava753/dyson/internal/stdlib/time"
 )
 
@@ -12,6 +13,7 @@ import (
 func DefaultCodecRegistry() codec.Registry {
 	registry := codec.DefaultRegistry()
 	stdlibre.RegisterCodecs(registry)
+	stdlibsubprocess.RegisterCodecs(registry)
 	stdlibtime.RegisterStructTimeCodec(registry)
 	return registry
 }
