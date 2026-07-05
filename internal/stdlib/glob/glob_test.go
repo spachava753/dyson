@@ -20,12 +20,12 @@ func TestGlobTestdata(t *testing.T) {
 	filename, err := filepath.Abs(filepath.Join("testdata", "glob.star"))
 	be.Err(t, err, nil)
 
-	osModule := stdlibos.MakeModule(xfs.IOFS{FS: fstest.MapFS{
+	osModule := stdlibos.MakeModule(stdlibos.ModuleConfig{FS: xfs.IOFS{FS: fstest.MapFS{
 		"a.txt":             {Data: []byte("a")},
 		"b.py":              {Data: []byte("b")},
 		".hidden":           {Data: []byte("hidden")},
 		"subdir/nested.txt": {Data: []byte("nested")},
-	}})
+	}}})
 	module := MakeModule(osModule)
 
 	predeclared := starlark.StringDict{

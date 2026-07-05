@@ -1,8 +1,8 @@
 # Starlark implementation of Dyson's Python-like os compatibility module.
 #
 # Deterministic path-string helpers live here. Host-facing operations are exposed
-# through the injected _os primitive module and are intentionally stubbed in Go
-# until their policy and behavior are implemented.
+# through the injected _os primitive module so callers can choose or deny the
+# filesystem, environment, process, and platform capabilities used by builtins.
 
 
 def _path_isabs(path):

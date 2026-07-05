@@ -1,10 +1,12 @@
 package xfs
 
 import (
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // FS is the narrow filesystem surface exposed to Starlark stdlib modules.
@@ -14,6 +16,46 @@ type FS interface {
 	ReadDir(name string) ([]fs.DirEntry, error)
 	Stat(name string) (fs.FileInfo, error)
 	Lstat(name string) (fs.FileInfo, error)
+}
+
+// MutFS is implemented by filesystems that support path mutation primitives.
+type MutFS interface {
+	Mkdir(name string, perm fs.FileMode) error
+	Remove(name string) error
+	Rename(oldname, newname string) error
+	Chmod(name string, mode fs.FileMode) error
+	Chown(name string, uid, gid int) error
+	Chtimes(name string, atime, mtime time.Time) error
+	Truncate(name string, size int64) error
+	Link(oldname, newname string) error
+	Symlink(oldname, newname string) error
+	Readlink(name string) (string, error)
+}
+
+// File is the abstract file handle used by descriptor-style Starlark APIs.
+type File interface {
+	io.Reader
+	io.Writer
+	io.Closer
+	Sync() error
+	Truncate(size int64) error
+}
+
+// OpenFS is implemented by filesystems that expose file-descriptor-like I/O.
+type OpenFS interface {
+	OpenFile(name string, flag int, perm fs.FileMode) (File, error)
+}
+
+// PathFS is implemented by filesystems that can resolve absolute/canonical host
+// paths. Contained virtual filesystems generally should not implement it.
+type PathFS interface {
+	Abs(name string) (string, error)
+	Realpath(name string) (string, error)
+}
+
+// SameFileFS is implemented when a filesystem can compare path identity.
+type SameFileFS interface {
+	SameFile(a, b string) (bool, error)
 }
 
 // HostFS exposes the host filesystem below Root using normal OS path semantics.
@@ -36,6 +78,84 @@ func (f HostFS) Stat(name string) (fs.FileInfo, error) {
 // Lstat returns host file info without following symlinks.
 func (f HostFS) Lstat(name string) (fs.FileInfo, error) {
 	return os.Lstat(f.resolve(name))
+}
+
+// Mkdir creates a host directory.
+func (f HostFS) Mkdir(name string, perm fs.FileMode) error {
+	return os.Mkdir(f.resolve(name), perm)
+}
+
+// Remove removes a host path.
+func (f HostFS) Remove(name string) error {
+	return os.Remove(f.resolve(name))
+}
+
+// Rename renames a host path.
+func (f HostFS) Rename(oldname, newname string) error {
+	return os.Rename(f.resolve(oldname), f.resolve(newname))
+}
+
+// Chmod changes host path permissions.
+func (f HostFS) Chmod(name string, mode fs.FileMode) error {
+	return os.Chmod(f.resolve(name), mode)
+}
+
+// Chown changes host path ownership.
+func (f HostFS) Chown(name string, uid, gid int) error {
+	return os.Chown(f.resolve(name), uid, gid)
+}
+
+// Chtimes changes host path access and modification times.
+func (f HostFS) Chtimes(name string, atime, mtime time.Time) error {
+	return os.Chtimes(f.resolve(name), atime, mtime)
+}
+
+// Truncate changes host file size.
+func (f HostFS) Truncate(name string, size int64) error {
+	return os.Truncate(f.resolve(name), size)
+}
+
+// Link creates a hard link.
+func (f HostFS) Link(oldname, newname string) error {
+	return os.Link(f.resolve(oldname), f.resolve(newname))
+}
+
+// Symlink creates a symbolic link.
+func (f HostFS) Symlink(oldname, newname string) error {
+	return os.Symlink(oldname, f.resolve(newname))
+}
+
+// Readlink reads a symbolic link target.
+func (f HostFS) Readlink(name string) (string, error) {
+	return os.Readlink(f.resolve(name))
+}
+
+// OpenFile opens a host file.
+func (f HostFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
+	return os.OpenFile(f.resolve(name), flag, perm)
+}
+
+// Abs resolves name to an absolute host path.
+func (f HostFS) Abs(name string) (string, error) {
+	return filepath.Abs(f.resolve(name))
+}
+
+// Realpath resolves symbolic links in name.
+func (f HostFS) Realpath(name string) (string, error) {
+	return filepath.EvalSymlinks(f.resolve(name))
+}
+
+// SameFile reports whether two paths identify the same host file.
+func (f HostFS) SameFile(a, b string) (bool, error) {
+	ia, err := os.Stat(f.resolve(a))
+	if err != nil {
+		return false, err
+	}
+	ib, err := os.Stat(f.resolve(b))
+	if err != nil {
+		return false, err
+	}
+	return os.SameFile(ia, ib), nil
 }
 
 func (f HostFS) resolve(name string) string {

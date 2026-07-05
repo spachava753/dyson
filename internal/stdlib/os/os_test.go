@@ -14,13 +14,13 @@ import (
 )
 
 func TestOSTestdata(t *testing.T) {
-	module := MakeModule(xfs.IOFS{FS: fstest.MapFS{
-		"dir/nested.txt": {Data: []byte("nested")},
-		"file.txt":       {Data: []byte("content")},
+	module := MakeModule(ModuleConfig{FS: xfs.IOFS{FS: fstest.MapFS{
+		"dir/nested.txt": {Data: []byte("nested"), Mode: 0o644},
+		"file.txt":       {Data: []byte("content"), Mode: 0o644},
 		"sibling/file.txt": {
-			Data: []byte("content"),
+			Data: []byte("content"), Mode: 0o644,
 		},
-	}})
+	}}})
 	predeclared := starlark.StringDict{
 		"root_entries": starlark.NewList([]starlark.Value{
 			starlark.String("dir"),
@@ -29,7 +29,17 @@ func TestOSTestdata(t *testing.T) {
 		}),
 		"sibling_dir": starlark.String("sibling"),
 	}
-	filename := filepath.Join("testdata", "os.star")
+	runOSTestdata(t, module, filepath.Join("testdata", "os.star"), predeclared)
+}
+
+func TestOSHostTestdata(t *testing.T) {
+	t.Setenv("DYSON_OS_TEST", "before")
+	module := MakeModule(HostConfig(t.TempDir()))
+	runOSTestdata(t, module, filepath.Join("testdata", "host.star"), nil)
+}
+
+func runOSTestdata(t *testing.T, module starlark.Value, filename string, predeclared starlark.StringDict) {
+	t.Helper()
 	for i, chunk := range chunkedfile.Read(filename, t) {
 		t.Run(fmt.Sprintf("chunk_%02d", i+1), func(t *testing.T) {
 			thread := newTestThread(t, module)
