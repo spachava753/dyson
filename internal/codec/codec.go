@@ -240,6 +240,26 @@ func DefaultRegistry() Registry {
 				return starlark.NewList(items), nil
 			},
 		},
+		starlark.NewSet(0).Type(): {
+			Type:    starlark.NewSet(0).Type(),
+			Version: 1,
+			Serialize: func(val starlark.Value) (SerializedVal, error) {
+				return registry.serializeIterable(val)
+			},
+			Restore: func(val SerializedVal) (starlark.Value, error) {
+				items, err := registry.restoreList(val.List)
+				if err != nil {
+					return nil, err
+				}
+				set := starlark.NewSet(len(items))
+				for _, item := range items {
+					if err := set.Insert(item); err != nil {
+						return nil, err
+					}
+				}
+				return set, nil
+			},
+		},
 		starlark.NewDict(0).Type(): {
 			Type:    starlark.NewDict(0).Type(),
 			Version: 1,
@@ -276,6 +296,25 @@ func (r Registry) serializeIndexable(val starlark.Value) (SerializedVal, error) 
 		sv.List[i] = item
 	}
 	return sv, nil
+}
+
+func (r Registry) serializeIterable(val starlark.Value) (SerializedVal, error) {
+	v, ok := val.(starlark.Iterable)
+	if !ok {
+		return SerializedVal{}, fmt.Errorf("dyson: got %T for iterable codec", val)
+	}
+	var items []SerializedVal
+	iter := v.Iterate()
+	defer iter.Done()
+	var item starlark.Value
+	for iter.Next(&item) {
+		serialized, err := r.Serialize(item)
+		if err != nil {
+			return SerializedVal{}, err
+		}
+		items = append(items, serialized)
+	}
+	return SerializedVal{Type: v.Type(), List: items}, nil
 }
 
 func (r Registry) restoreList(vals []SerializedVal) ([]starlark.Value, error) {
