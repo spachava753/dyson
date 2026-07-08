@@ -41,6 +41,9 @@ func (s *Sphere) record(
 	resp codec.SerializedVal,
 	respErr error,
 ) {
+	if !s.enableRecording {
+		return
+	}
 	currChunk := s.log[len(s.log)-1]
 	currChunk.Calls = append(currChunk.Calls, HostCall{
 		FnName:   fnname,

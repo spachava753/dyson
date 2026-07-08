@@ -18,6 +18,76 @@ func mustSerialize(t *testing.T, registry codec.Registry, val starlark.Value) co
 	return sv
 }
 
+func TestRecordingDisabledDoesNotRetainEvalLog(t *testing.T) {
+	called := 0
+	s := NewSphere(func(thread *starlark.Thread, msg string) {
+		t.Log(msg)
+	}, map[string]starlark.StringDict{
+		"custom.star": {
+			"tick": starlark.NewBuiltin("tick", func(
+				thread *starlark.Thread,
+				fn *starlark.Builtin,
+				args starlark.Tuple,
+				kwargs []starlark.Tuple,
+			) (starlark.Value, error) {
+				called++
+				return starlark.MakeInt(called), nil
+			}),
+		},
+	}, DefaultCodecRegistry(), false)
+
+	be.Err(t, s.Eval(t.Context(), `
+load("custom.star", "tick")
+value = tick()
+`), nil)
+	be.Equal(t, called, 1)
+	be.Equal(t, len(s.Log()), 0)
+}
+
+func TestReplayWorksWhenRecordingDisabled(t *testing.T) {
+	newSphere := func(record bool) (*Sphere, *int) {
+		called := 0
+		m, err := starlarktest.LoadAssertModule()
+		be.Err(t, err, nil)
+		s := NewSphere(func(thread *starlark.Thread, msg string) {
+			t.Log(msg)
+		}, map[string]starlark.StringDict{
+			"assert.star": m,
+			"custom.star": {
+				"next": starlark.NewBuiltin("next", func(
+					thread *starlark.Thread,
+					fn *starlark.Builtin,
+					args starlark.Tuple,
+					kwargs []starlark.Tuple,
+				) (starlark.Value, error) {
+					called++
+					return starlark.MakeInt(called), nil
+				}),
+			},
+		}, DefaultCodecRegistry(), record)
+		return s, &called
+	}
+
+	recordingSphere, recordingCalls := newSphere(true)
+	be.Err(t, recordingSphere.Eval(t.Context(), `
+load("custom.star", "next")
+value = next()
+`), nil)
+	log := append([]ReplChunk(nil), recordingSphere.Log()...)
+	be.Equal(t, *recordingCalls, 1)
+	be.Equal(t, len(log), 1)
+	be.Equal(t, len(log[0].Calls), 1)
+
+	replaySphere, replayCalls := newSphere(false)
+	be.Err(t, replaySphere.Replay(t.Context(), log), nil)
+	be.Equal(t, *replayCalls, 0)
+	be.Equal(t, len(replaySphere.Log()), 0)
+	be.Err(t, replaySphere.Eval(t.Context(), `
+load("assert.star", "assert")
+assert.eq(value, 1)
+`), nil)
+}
+
 func TestRecordTestdata(t *testing.T) {
 	newTestSphere := func(t *testing.T, custom starlark.StringDict) *Sphere {
 		t.Helper()
@@ -28,7 +98,7 @@ func TestRecordTestdata(t *testing.T) {
 		}, map[string]starlark.StringDict{
 			"assert.star": m,
 			"custom.star": custom,
-		}, DefaultCodecRegistry())
+		}, DefaultCodecRegistry(), true)
 	}
 	defaultRegistry := DefaultCodecRegistry()
 	tupleVal := func(vals ...starlark.Value) codec.SerializedVal {
@@ -250,7 +320,7 @@ explode(1)
 					return starlark.None, nil
 				}),
 			},
-		}, registry)
+		}, registry, true)
 		err = s.Eval(t.Context(), `
 load("custom.star", "effect")
 effect("unsupported")

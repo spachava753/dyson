@@ -37,7 +37,7 @@ func TestEvalTestdata(t *testing.T) {
 			}
 			s := NewSphere(func(thread *starlark.Thread, msg string) {
 				fmt.Fprintln(&sb, msg)
-			}, mods, registry)
+			}, mods, registry, true)
 			lastIdx := len(chunks) - 1
 
 			// run the simulated repl chunks
@@ -57,7 +57,7 @@ func TestEvalTestdata(t *testing.T) {
 			// run the last chunk after replaying, which will be assertions
 			s = NewSphere(func(thread *starlark.Thread, msg string) {
 				fmt.Fprintln(&sb, msg)
-			}, mods, registry)
+			}, mods, registry, true)
 			starlarktest.SetReporter(s.t, t)
 			// Replay may encounter the same intentional Starlark failures as setup chunks.
 			_ = s.Replay(t.Context(), log)

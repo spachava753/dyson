@@ -18,6 +18,8 @@ type Sphere struct {
 	// log is the durable transcript of submitted chunks and recorded host calls.
 	log []ReplChunk
 
+	enableRecording bool
+
 	// t and g are the live Starlark VM state for incremental REPL execution.
 	t *starlark.Thread
 	g starlark.StringDict
@@ -43,6 +45,7 @@ func NewSphere(
 	print func(thread *starlark.Thread, msg string),
 	modules map[string]starlark.StringDict,
 	codecs codec.Registry,
+	record bool,
 ) *Sphere {
 	fopts := &syntax.FileOptions{
 		Set:               true,
@@ -52,7 +55,7 @@ func NewSphere(
 		LoadBindsGlobally: true,
 		Recursion:         false,
 	}
-	s := &Sphere{fopts: fopts, g: make(starlark.StringDict), codecs: codecs}
+	s := &Sphere{fopts: fopts, enableRecording: record, g: make(starlark.StringDict), codecs: codecs}
 
 	sessionModules := make(map[string]starlark.StringDict, len(modules))
 	for module, sd := range modules {
@@ -113,9 +116,11 @@ func (s *Sphere) Eval(ctx context.Context, code string) error {
 	if err != nil {
 		return err
 	}
-	s.log = append(s.log, ReplChunk{
-		Code: code,
-	})
+	if s.enableRecording {
+		s.log = append(s.log, ReplChunk{
+			Code: code,
+		})
+	}
 	return starlark.ExecREPLChunk(f, s.t, s.g)
 }
 
@@ -153,6 +158,12 @@ func (s *Sphere) Replay(ctx context.Context, log []ReplChunk) error {
 		}
 		s.replayStep = 0
 		s.replayChunk += 1
+	}
+
+	if !s.enableRecording {
+		// Replay needs the supplied log while it is rebuilding state, but a
+		// non-recording sphere should not retain that transcript afterward.
+		s.log = nil
 	}
 
 	return nil
