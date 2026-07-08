@@ -3,9 +3,22 @@ package a
 import (
 	"fmt"
 
+	"example.com/codec"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 )
+
+const registeredTypeName = "registered.Value"
+
+var _ = codec.ValueCodec{Type: registeredTypeName}
+
+type registeredValue struct{}
+
+func (registeredValue) String() string        { return "registered" }
+func (registeredValue) Type() string          { return registeredTypeName }
+func (registeredValue) Freeze()               {}
+func (registeredValue) Truth() starlark.Bool  { return starlark.True }
+func (registeredValue) Hash() (uint32, error) { return 0, nil }
 
 type customValue struct{}
 
@@ -21,6 +34,10 @@ func encodableString(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 
 func encodableTuple(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	return starlark.Tuple{starlark.String("ok"), starlark.MakeInt(1)}, nil
+}
+
+func registeredCustom(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	return &registeredValue{}, nil
 }
 
 func directCustom(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {

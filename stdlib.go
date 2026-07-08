@@ -13,6 +13,8 @@ import (
 	stdlibsubprocess "github.com/spachava753/dyson/internal/stdlib/subprocess"
 	stdlibtempfile "github.com/spachava753/dyson/internal/stdlib/tempfile"
 	stdlibtime "github.com/spachava753/dyson/internal/stdlib/time"
+	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/xos"
 	"go.starlark.net/starlark"
 )
 
@@ -21,7 +23,10 @@ import (
 // backed os/glob modules and a fresh time module so per-session policy and
 // monotonic clocks do not share state.
 func StdlibModules() map[string]starlark.StringDict {
-	osModule := stdlibos.MakeModule(stdlibos.HostConfig("."))
+	fileDescriptors := xfs.NewFileDescriptors()
+	osConfig := stdlibos.HostConfig(".")
+	osConfig.FileDescriptors = fileDescriptors
+	osModule := stdlibos.MakeModule(osConfig)
 	globModule := stdlibglob.MakeModule(osModule)
 
 	return map[string]starlark.StringDict{
@@ -50,7 +55,7 @@ func StdlibModules() map[string]starlark.StringDict {
 			stdlibsubprocess.ModuleName: stdlibsubprocess.Module,
 		},
 		stdlibtempfile.ModuleName + ".star": {
-			stdlibtempfile.ModuleName: stdlibtempfile.Module,
+			stdlibtempfile.ModuleName: stdlibtempfile.MakeModule(stdlibtempfile.ModuleConfig{FS: xfs.HostFS{Root: "."}, Env: xos.Host{}, FileDescriptors: fileDescriptors}),
 		},
 		stdlibtime.ModuleName + ".star": {
 			stdlibtime.ModuleName: stdlibtime.MakeModule(gotime.Now()),

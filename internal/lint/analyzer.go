@@ -19,21 +19,87 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	unsupportedHelpers := collectUnsupportedHelpers(pass)
+	constStrings := collectStringConstants(pass)
+	registeredTypes := collectRegisteredCodecTypes(pass, constStrings)
+	unsupportedHelpers := collectUnsupportedHelpers(pass, constStrings, registeredTypes)
 	for _, file := range pass.Files {
 		ast.Inspect(file, func(n ast.Node) bool {
 			fn, ok := n.(*ast.FuncDecl)
 			if !ok || !isBuiltinCallback(pass, fn) {
 				return true
 			}
-			checkBuiltin(pass, fn, unsupportedHelpers)
+			checkBuiltin(pass, fn, constStrings, registeredTypes, unsupportedHelpers)
 			return false
 		})
 	}
 	return nil, nil
 }
 
-func collectUnsupportedHelpers(pass *analysis.Pass) map[*types.Func]ast.Expr {
+func collectStringConstants(pass *analysis.Pass) map[string]string {
+	values := map[string]string{}
+	for _, file := range pass.Files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			vs, ok := n.(*ast.ValueSpec)
+			if !ok {
+				return true
+			}
+			for i, name := range vs.Names {
+				if i >= len(vs.Values) {
+					continue
+				}
+				if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind.String() == "STRING" {
+					values[name.Name] = strings.Trim(lit.Value, "\"")
+				}
+			}
+			return true
+		})
+	}
+	return values
+}
+
+func collectRegisteredCodecTypes(pass *analysis.Pass, codecTypeNames map[string]string) map[string]bool {
+	registered := map[string]bool{}
+	for _, file := range pass.Files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			cl, ok := n.(*ast.CompositeLit)
+			if !ok || !strings.HasSuffix(types.TypeString(pass.TypesInfo.TypeOf(cl), nil), ".ValueCodec") {
+				return true
+			}
+			for _, elt := range cl.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				key, ok := kv.Key.(*ast.Ident)
+				if !ok || key.Name != "Type" {
+					continue
+				}
+				if name := stringValue(codecTypeNames, kv.Value); name != "" {
+					registered[name] = true
+				}
+			}
+			return true
+		})
+	}
+	return registered
+}
+
+func stringValue(names map[string]string, expr ast.Expr) string {
+	switch v := expr.(type) {
+	case *ast.BasicLit:
+		if v.Kind.String() == "STRING" {
+			return strings.Trim(v.Value, "\"")
+		}
+	case *ast.Ident:
+		if names == nil {
+			return ""
+		}
+		return names[v.Name]
+	}
+	return ""
+}
+
+func collectUnsupportedHelpers(pass *analysis.Pass, constStrings map[string]string, registeredTypes map[string]bool) map[*types.Func]ast.Expr {
 	helpers := map[*types.Func]ast.Expr{}
 	for _, file := range pass.Files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -50,7 +116,7 @@ func collectUnsupportedHelpers(pass *analysis.Pass) map[*types.Func]ast.Expr {
 				if !ok || len(ret.Results) == 0 {
 					return true
 				}
-				if isUnsupportedValueExpr(pass, ret.Results[0]) {
+				if isUnsupportedValueExpr(pass, constStrings, registeredTypes, ret.Results[0]) {
 					helpers[obj] = ret.Results[0]
 					return false
 				}
@@ -87,20 +153,20 @@ func hasName(typ types.Type, name string) bool {
 	return false
 }
 
-func checkBuiltin(pass *analysis.Pass, fn *ast.FuncDecl, unsupportedHelpers map[*types.Func]ast.Expr) {
+func checkBuiltin(pass *analysis.Pass, fn *ast.FuncDecl, constStrings map[string]string, registeredTypes map[string]bool, unsupportedHelpers map[*types.Func]ast.Expr) {
 	customLists := map[*types.Var]ast.Expr{}
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		switch stmt := n.(type) {
 		case *ast.AssignStmt:
-			rememberCustomList(pass, customLists, unsupportedHelpers, stmt)
+			rememberCustomList(pass, customLists, constStrings, registeredTypes, unsupportedHelpers, stmt)
 		case *ast.ReturnStmt:
-			checkReturn(pass, customLists, unsupportedHelpers, stmt)
+			checkReturn(pass, customLists, constStrings, registeredTypes, unsupportedHelpers, stmt)
 		}
 		return true
 	})
 }
 
-func rememberCustomList(pass *analysis.Pass, customLists map[*types.Var]ast.Expr, unsupportedHelpers map[*types.Func]ast.Expr, stmt *ast.AssignStmt) {
+func rememberCustomList(pass *analysis.Pass, customLists map[*types.Var]ast.Expr, constStrings map[string]string, registeredTypes map[string]bool, unsupportedHelpers map[*types.Func]ast.Expr, stmt *ast.AssignStmt) {
 	for i, rhs := range stmt.Rhs {
 		call, ok := rhs.(*ast.CallExpr)
 		if !ok || !isMakeStarlarkValueSlice(pass, call) {
@@ -120,7 +186,7 @@ func rememberCustomList(pass *analysis.Pass, customLists map[*types.Var]ast.Expr
 	}
 
 	for i, rhs := range stmt.Rhs {
-		if i >= len(stmt.Lhs) || !isUnsupportedOrHelperValueExpr(pass, unsupportedHelpers, rhs) {
+		if i >= len(stmt.Lhs) || !isUnsupportedOrHelperValueExpr(pass, constStrings, registeredTypes, unsupportedHelpers, rhs) {
 			continue
 		}
 		if idx, ok := stmt.Lhs[i].(*ast.IndexExpr); ok {
@@ -133,7 +199,7 @@ func rememberCustomList(pass *analysis.Pass, customLists map[*types.Var]ast.Expr
 	}
 
 	for _, rhs := range stmt.Rhs {
-		if !isUnsupportedOrHelperValueExpr(pass, unsupportedHelpers, rhs) {
+		if !isUnsupportedOrHelperValueExpr(pass, constStrings, registeredTypes, unsupportedHelpers, rhs) {
 			continue
 		}
 		for obj := range customLists {
@@ -144,7 +210,7 @@ func rememberCustomList(pass *analysis.Pass, customLists map[*types.Var]ast.Expr
 	}
 }
 
-func checkReturn(pass *analysis.Pass, customLists map[*types.Var]ast.Expr, unsupportedHelpers map[*types.Func]ast.Expr, stmt *ast.ReturnStmt) {
+func checkReturn(pass *analysis.Pass, customLists map[*types.Var]ast.Expr, constStrings map[string]string, registeredTypes map[string]bool, unsupportedHelpers map[*types.Func]ast.Expr, stmt *ast.ReturnStmt) {
 	if len(stmt.Results) == 0 {
 		return
 	}
@@ -152,7 +218,7 @@ func checkReturn(pass *analysis.Pass, customLists map[*types.Var]ast.Expr, unsup
 	if isNil(value) {
 		return
 	}
-	if isUnsupportedOrHelperValueExpr(pass, unsupportedHelpers, value) {
+	if isUnsupportedOrHelperValueExpr(pass, constStrings, registeredTypes, unsupportedHelpers, value) {
 		pass.Reportf(value.Pos(), "starlark builtin returns %s, which is not registered with Dyson's codec registry", exprName(pass, value))
 		return
 	}
@@ -165,8 +231,8 @@ func checkReturn(pass *analysis.Pass, customLists map[*types.Var]ast.Expr, unsup
 	}
 }
 
-func isUnsupportedOrHelperValueExpr(pass *analysis.Pass, unsupportedHelpers map[*types.Func]ast.Expr, expr ast.Expr) bool {
-	if isUnsupportedValueExpr(pass, expr) {
+func isUnsupportedOrHelperValueExpr(pass *analysis.Pass, constStrings map[string]string, registeredTypes map[string]bool, unsupportedHelpers map[*types.Func]ast.Expr, expr ast.Expr) bool {
+	if isUnsupportedValueExpr(pass, constStrings, registeredTypes, expr) {
 		return true
 	}
 	call, ok := expr.(*ast.CallExpr)
@@ -190,21 +256,21 @@ func funcObject(pass *analysis.Pass, expr ast.Expr) (*types.Func, bool) {
 	}
 }
 
-func isUnsupportedValueExpr(pass *analysis.Pass, expr ast.Expr) bool {
+func isUnsupportedValueExpr(pass *analysis.Pass, constStrings map[string]string, registeredTypes map[string]bool, expr ast.Expr) bool {
 	if unary, ok := expr.(*ast.UnaryExpr); ok && unary.Op.String() == "&" {
-		return isUnsupportedConcreteValue(pass, pass.TypesInfo.TypeOf(expr))
+		return isUnsupportedConcreteValue(pass, constStrings, registeredTypes, pass.TypesInfo.TypeOf(expr))
 	}
 	if call, ok := expr.(*ast.CallExpr); ok {
 		if isStarlarkStructFromStringDict(pass, call) {
 			return true
 		}
-		return isUnsupportedConcreteValue(pass, pass.TypesInfo.TypeOf(call))
+		return isUnsupportedConcreteValue(pass, constStrings, registeredTypes, pass.TypesInfo.TypeOf(call))
 	}
-	return isUnsupportedConcreteValue(pass, pass.TypesInfo.TypeOf(expr))
+	return isUnsupportedConcreteValue(pass, constStrings, registeredTypes, pass.TypesInfo.TypeOf(expr))
 }
 
-func isUnsupportedConcreteValue(pass *analysis.Pass, typ types.Type) bool {
-	if typ == nil || isCodecSupportedType(typ) {
+func isUnsupportedConcreteValue(pass *analysis.Pass, constStrings map[string]string, registeredTypes map[string]bool, typ types.Type) bool {
+	if typ == nil || isCodecSupportedType(typ) || isRegisteredCustomValue(pass, constStrings, registeredTypes, typ) {
 		return false
 	}
 	valueType := lookupStarlarkValue(pass)
@@ -212,6 +278,46 @@ func isUnsupportedConcreteValue(pass *analysis.Pass, typ types.Type) bool {
 		return false
 	}
 	return !isInterface(typ)
+}
+
+func isRegisteredCustomValue(pass *analysis.Pass, constStrings map[string]string, registeredTypes map[string]bool, typ types.Type) bool {
+	if len(registeredTypes) == 0 {
+		return false
+	}
+	method, _, _ := types.LookupFieldOrMethod(typ, true, nil, "Type")
+	fn, ok := method.(*types.Func)
+	if !ok {
+		return false
+	}
+	decl := funcDecl(pass, fn)
+	if decl == nil || decl.Body == nil {
+		return false
+	}
+	for _, stmt := range decl.Body.List {
+		ret, ok := stmt.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) != 1 {
+			continue
+		}
+		if name := stringValue(constStrings, ret.Results[0]); registeredTypes[name] {
+			return true
+		}
+	}
+	return false
+}
+
+func funcDecl(pass *analysis.Pass, fn *types.Func) *ast.FuncDecl {
+	for _, file := range pass.Files {
+		for _, decl := range file.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			if obj, ok := pass.TypesInfo.ObjectOf(fd.Name).(*types.Func); ok && obj == fn {
+				return fd
+			}
+		}
+	}
+	return nil
 }
 
 func lookupStarlarkValue(pass *analysis.Pass) *types.Interface {

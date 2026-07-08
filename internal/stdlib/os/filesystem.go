@@ -7,25 +7,18 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spachava753/dyson/internal/xfs"
 	"github.com/spachava753/dyson/internal/xos"
 	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 )
 
 type FileSystem struct {
 	fsys     xfs.FS
 	platform xos.Platform
+	fds      *xfs.FileDescriptors
 }
-
-var fdTable = struct {
-	sync.Mutex
-	next  int
-	files map[int]xfs.File
-}{next: 3, files: map[int]xfs.File{}}
 
 var dirEntryMethods = map[string]*starlark.Builtin{
 	"is_dir":  starlark.NewBuiltin("os.DirEntry.is_dir", dirEntryIsDir),
@@ -106,16 +99,66 @@ func numberArg(fn, name string, value starlark.Value) (float64, error) {
 func statValue(info fs.FileInfo) starlark.Value {
 	mode := info.Mode()
 	mtime := info.ModTime()
-	return starlarkstruct.FromStringDict(starlark.String("os.stat_result"), starlark.StringDict{
-		"st_mode":  starlark.MakeInt64(int64(mode)),
-		"st_size":  starlark.MakeInt64(info.Size()),
-		"st_mtime": starlark.Float(float64(mtime.UnixNano()) / 1e9),
-		"st_atime": starlark.Float(float64(mtime.UnixNano()) / 1e9),
-		"st_ctime": starlark.Float(float64(mtime.UnixNano()) / 1e9),
-		"st_ino":   starlark.MakeInt(0),
-		"st_dev":   starlark.MakeInt(0),
-		"is_dir":   starlark.Bool(info.IsDir()),
-	})
+	return &statResultValue{
+		mode:  int64(mode),
+		size:  info.Size(),
+		mtime: float64(mtime.UnixNano()) / 1e9,
+		atime: float64(mtime.UnixNano()) / 1e9,
+		ctime: float64(mtime.UnixNano()) / 1e9,
+		ino:   0,
+		dev:   0,
+		isDir: info.IsDir(),
+	}
+}
+
+type statResultValue struct {
+	mode  int64
+	size  int64
+	mtime float64
+	atime float64
+	ctime float64
+	ino   int64
+	dev   int64
+	isDir bool
+}
+
+func (s *statResultValue) String() string { return "os.stat_result" }
+
+func (s *statResultValue) Type() string { return "os.stat_result" }
+
+func (s *statResultValue) Freeze() {}
+
+func (s *statResultValue) Truth() starlark.Bool { return starlark.True }
+
+func (s *statResultValue) Hash() (uint32, error) {
+	return 0, fmt.Errorf("unhashable type: os.stat_result")
+}
+
+func (s *statResultValue) AttrNames() []string {
+	return []string{"is_dir", "st_atime", "st_ctime", "st_dev", "st_ino", "st_mode", "st_mtime", "st_size"}
+}
+
+func (s *statResultValue) Attr(name string) (starlark.Value, error) {
+	switch name {
+	case "st_mode":
+		return starlark.MakeInt64(s.mode), nil
+	case "st_size":
+		return starlark.MakeInt64(s.size), nil
+	case "st_mtime":
+		return starlark.Float(s.mtime), nil
+	case "st_atime":
+		return starlark.Float(s.atime), nil
+	case "st_ctime":
+		return starlark.Float(s.ctime), nil
+	case "st_ino":
+		return starlark.MakeInt64(s.ino), nil
+	case "st_dev":
+		return starlark.MakeInt64(s.dev), nil
+	case "is_dir":
+		return starlark.Bool(s.isDir), nil
+	default:
+		return nil, nil
+	}
 }
 
 func permissionsAllow(mode fs.FileMode, req int) bool {
@@ -164,7 +207,7 @@ func (f FileSystem) scandir(thread *starlark.Thread, fn *starlark.Builtin, args 
 	}
 	items := make([]starlark.Value, len(entries))
 	for i, entry := range entries {
-		items[i] = &dirEntryValue{fsys: f.fsys, dir: path, name: entry.Name(), isDir: entry.IsDir(), mode: entry.Type()}
+		items[i] = &dirEntryValue{fsys: f.fsys, stat: statResultFromDirEntry(entry), dir: path, name: entry.Name(), mode: entry.Type()}
 	}
 	return starlark.NewList(items), nil
 }
@@ -561,23 +604,16 @@ func (f FileSystem) open(thread *starlark.Thread, fn *starlark.Builtin, args sta
 	if err != nil {
 		return nil, err
 	}
-	fdTable.Lock()
-	fd := fdTable.next
-	fdTable.next++
-	fdTable.files[fd] = file
-	fdTable.Unlock()
-	return starlark.MakeInt(fd), nil
+	return starlark.MakeInt(f.fds.Store(file)), nil
 }
 
-func fileForFD(fn string, fdVal starlark.Int) (xfs.File, int, error) {
+func (f FileSystem) fileForFD(fn string, fdVal starlark.Int) (xfs.File, int, error) {
 	fd, err := intArg(fn, "fd", fdVal)
 	if err != nil {
 		return nil, 0, err
 	}
-	fdTable.Lock()
-	file := fdTable.files[fd]
-	fdTable.Unlock()
-	if file == nil {
+	file, ok := f.fds.Lookup(fd)
+	if !ok {
 		return nil, 0, fmt.Errorf("%s: unknown file descriptor %d", fn, fd)
 	}
 	return file, fd, nil
@@ -588,13 +624,11 @@ func (f FileSystem) close(thread *starlark.Thread, fn *starlark.Builtin, args st
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "fd", &fdVal); err != nil {
 		return nil, err
 	}
-	file, fd, err := fileForFD(fn.Name(), fdVal)
+	file, fd, err := f.fileForFD(fn.Name(), fdVal)
 	if err != nil {
 		return nil, err
 	}
-	fdTable.Lock()
-	delete(fdTable.files, fd)
-	fdTable.Unlock()
+	f.fds.Delete(fd)
 	return starlark.None, file.Close()
 }
 
@@ -603,7 +637,7 @@ func (f FileSystem) read(thread *starlark.Thread, fn *starlark.Builtin, args sta
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "fd", &fdVal, "n", &nVal); err != nil {
 		return nil, err
 	}
-	file, _, err := fileForFD(fn.Name(), fdVal)
+	file, _, err := f.fileForFD(fn.Name(), fdVal)
 	if err != nil {
 		return nil, err
 	}
@@ -625,7 +659,7 @@ func (f FileSystem) write(thread *starlark.Thread, fn *starlark.Builtin, args st
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "fd", &fdVal, "data", &data); err != nil {
 		return nil, err
 	}
-	file, _, err := fileForFD(fn.Name(), fdVal)
+	file, _, err := f.fileForFD(fn.Name(), fdVal)
 	if err != nil {
 		return nil, err
 	}
@@ -650,7 +684,7 @@ func (f FileSystem) fsync(thread *starlark.Thread, fn *starlark.Builtin, args st
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "fd", &fdVal); err != nil {
 		return nil, err
 	}
-	file, _, err := fileForFD(fn.Name(), fdVal)
+	file, _, err := f.fileForFD(fn.Name(), fdVal)
 	if err != nil {
 		return nil, err
 	}
@@ -662,7 +696,7 @@ func (f FileSystem) ftruncate(thread *starlark.Thread, fn *starlark.Builtin, arg
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "fd", &fdVal, "length", &sizeVal); err != nil {
 		return nil, err
 	}
-	file, _, err := fileForFD(fn.Name(), fdVal)
+	file, _, err := f.fileForFD(fn.Name(), fdVal)
 	if err != nil {
 		return nil, err
 	}
@@ -812,11 +846,18 @@ func (f FileSystem) pathSamefile(thread *starlark.Thread, fn *starlark.Builtin, 
 }
 
 type dirEntryValue struct {
-	fsys  xfs.FS
-	dir   string
-	name  string
-	isDir bool
-	mode  fs.FileMode
+	fsys xfs.FS
+	stat *statResultValue
+	dir  string
+	name string
+	mode fs.FileMode
+}
+
+func statResultFromDirEntry(entry fs.DirEntry) *statResultValue {
+	if info, err := entry.Info(); err == nil {
+		return statValue(info).(*statResultValue)
+	}
+	return &statResultValue{mode: int64(entry.Type()), isDir: entry.IsDir()}
 }
 
 func (d *dirEntryValue) String() string { return "<DirEntry " + d.name + ">" }
@@ -851,7 +892,7 @@ func dirEntryIsDir(thread *starlark.Thread, fn *starlark.Builtin, args starlark.
 	if _, err := none(fn.Name(), args, kwargs); err != nil {
 		return nil, err
 	}
-	return starlark.Bool(d.isDir), nil
+	return starlark.Bool(d.stat != nil && d.stat.isDir), nil
 }
 
 func dirEntryIsFile(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -859,7 +900,7 @@ func dirEntryIsFile(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 	if _, err := none(fn.Name(), args, kwargs); err != nil {
 		return nil, err
 	}
-	return starlark.Bool(!d.isDir && d.mode.IsRegular()), nil
+	return starlark.Bool(d.stat != nil && !d.stat.isDir && d.mode.IsRegular()), nil
 }
 
 func dirEntryStat(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -867,9 +908,15 @@ func dirEntryStat(thread *starlark.Thread, fn *starlark.Builtin, args starlark.T
 	if _, err := none(fn.Name(), args, kwargs); err != nil {
 		return nil, err
 	}
-	info, err := d.fsys.Stat(joinPath(d.dir, d.name))
-	if err != nil {
-		return nil, err
+	if d.fsys != nil {
+		info, err := d.fsys.Stat(joinPath(d.dir, d.name))
+		if err != nil {
+			return nil, err
+		}
+		return statValue(info), nil
 	}
-	return statValue(info), nil
+	if d.stat != nil {
+		return d.stat, nil
+	}
+	return nil, fmt.Errorf("%s: stat snapshot is not available", fn.Name())
 }

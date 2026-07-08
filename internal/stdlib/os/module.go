@@ -22,11 +22,12 @@ var Module = MakeModule(HostConfig("."))
 
 // ModuleConfig groups the host domains used by Dyson's os compatibility module.
 type ModuleConfig struct {
-	FS         xfs.FS
-	Env        xos.Env
-	Process    xos.Process
-	WorkingDir xos.WorkingDir
-	Platform   xos.Platform
+	FS              xfs.FS
+	Env             xos.Env
+	Process         xos.Process
+	WorkingDir      xos.WorkingDir
+	Platform        xos.Platform
+	FileDescriptors *xfs.FileDescriptors
 }
 
 // HostConfig returns a module configuration backed by the host filesystem and OS.
@@ -47,6 +48,9 @@ func HostConfig(root string) ModuleConfig {
 func MakeModule(config ModuleConfig) *starlarkstruct.Module {
 	if config.Platform.OSName == "" {
 		config.Platform = xos.PortablePlatform
+	}
+	if config.FileDescriptors == nil {
+		config.FileDescriptors = xfs.NewFileDescriptors()
 	}
 	return loadModule(makePrimitiveModule(config), config.Platform)
 }
@@ -88,7 +92,7 @@ func loadModule(primitives *starlarkstruct.Module, platform xos.Platform) *starl
 }
 
 func makePrimitiveModule(config ModuleConfig) *starlarkstruct.Module {
-	filesystem := FileSystem{fsys: config.FS, platform: config.Platform}
+	filesystem := FileSystem{fsys: config.FS, platform: config.Platform, fds: config.FileDescriptors}
 	environment := Environment{env: config.Env, platform: config.Platform}
 	process := Process{process: config.Process}
 	workingDir := WorkingDirectory{dir: config.WorkingDir}

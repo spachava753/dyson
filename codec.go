@@ -2,6 +2,7 @@ package dyson
 
 import (
 	"github.com/spachava753/dyson/internal/codec"
+	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
 	stdlibre "github.com/spachava753/dyson/internal/stdlib/re"
 	stdlibsignal "github.com/spachava753/dyson/internal/stdlib/signal"
 	stdlibsubprocess "github.com/spachava753/dyson/internal/stdlib/subprocess"
@@ -13,6 +14,7 @@ import (
 // values.
 func DefaultCodecRegistry() codec.Registry {
 	registry := codec.DefaultRegistry()
+	stdlibos.RegisterCodecs(registry)
 	stdlibre.RegisterCodecs(registry)
 	stdlibsignal.RegisterCodecs(registry)
 	stdlibsubprocess.RegisterCodecs(registry)

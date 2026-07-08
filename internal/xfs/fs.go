@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -44,6 +45,43 @@ type File interface {
 // OpenFS is implemented by filesystems that expose file-descriptor-like I/O.
 type OpenFS interface {
 	OpenFile(name string, flag int, perm fs.FileMode) (File, error)
+}
+
+// FileDescriptors stores process-local file descriptors shared by Starlark stdlib modules.
+type FileDescriptors struct {
+	mu    sync.Mutex
+	next  int
+	files map[int]File
+}
+
+// NewFileDescriptors returns an empty descriptor table whose first allocated descriptor is 3.
+func NewFileDescriptors() *FileDescriptors {
+	return &FileDescriptors{next: 3, files: map[int]File{}}
+}
+
+// Store records file and returns its descriptor number.
+func (f *FileDescriptors) Store(file File) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fd := f.next
+	f.next++
+	f.files[fd] = file
+	return fd
+}
+
+// Lookup returns the file for fd.
+func (f *FileDescriptors) Lookup(fd int) (File, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	file, ok := f.files[fd]
+	return file, ok
+}
+
+// Delete removes fd from the table.
+func (f *FileDescriptors) Delete(fd int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.files, fd)
 }
 
 // PathFS is implemented by filesystems that can resolve absolute/canonical host
