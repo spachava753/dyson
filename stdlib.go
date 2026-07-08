@@ -28,6 +28,7 @@ func StdlibModules() map[string]starlark.StringDict {
 	osConfig.FileDescriptors = fileDescriptors
 	osModule := stdlibos.MakeModule(osConfig)
 	globModule := stdlibglob.MakeModule(osModule)
+	shutilModule := stdlibshutil.MakeModule(stdlibshutil.HostConfig(".", osModule))
 
 	return map[string]starlark.StringDict{
 		stdlibglob.ModuleName + ".star": {
@@ -46,7 +47,7 @@ func StdlibModules() map[string]starlark.StringDict {
 			stdlibre.ModuleName: stdlibre.Module,
 		},
 		stdlibshutil.ModuleName + ".star": {
-			stdlibshutil.ModuleName: stdlibshutil.Module,
+			stdlibshutil.ModuleName: shutilModule,
 		},
 		stdlibsignal.ModuleName + ".star": {
 			stdlibsignal.ModuleName: stdlibsignal.Module,

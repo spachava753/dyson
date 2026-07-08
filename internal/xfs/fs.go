@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -94,6 +95,18 @@ type PathFS interface {
 // SameFileFS is implemented when a filesystem can compare path identity.
 type SameFileFS interface {
 	SameFile(a, b string) (bool, error)
+}
+
+// Usage describes filesystem capacity around a path.
+type Usage struct {
+	Total uint64
+	Used  uint64
+	Free  uint64
+}
+
+// UsageFS is implemented when a filesystem can report disk usage.
+type UsageFS interface {
+	DiskUsage(name string) (Usage, error)
 }
 
 // HostFS exposes the host filesystem below Root using normal OS path semantics.
@@ -194,6 +207,18 @@ func (f HostFS) SameFile(a, b string) (bool, error) {
 		return false, err
 	}
 	return os.SameFile(ia, ib), nil
+}
+
+// DiskUsage returns host filesystem capacity around name.
+func (f HostFS) DiskUsage(name string) (Usage, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(f.resolve(name), &stat); err != nil {
+		return Usage{}, err
+	}
+	blockSize := uint64(stat.Bsize)
+	total := stat.Blocks * blockSize
+	free := stat.Bavail * blockSize
+	return Usage{Total: total, Used: total - free, Free: free}, nil
 }
 
 func (f HostFS) resolve(name string) string {

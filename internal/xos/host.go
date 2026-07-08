@@ -2,11 +2,13 @@ package xos
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -73,6 +75,11 @@ type CommandRunner interface {
 type WorkingDir interface {
 	Getwd() (string, error)
 	Chdir(path string) error
+}
+
+// Terminal controls terminal-size queries exposed by shutil.
+type Terminal interface {
+	TerminalSize() (columns, lines int, err error)
 }
 
 // OpenFlags are the integer constants consumed by filesystem OpenFile implementations.
@@ -297,6 +304,19 @@ func (Host) Getwd() (string, error) { return os.Getwd() }
 
 // Chdir changes the current host working directory.
 func (Host) Chdir(path string) error { return os.Chdir(path) }
+
+// TerminalSize returns terminal dimensions from COLUMNS and LINES when present.
+func (Host) TerminalSize() (int, int, error) {
+	columns, err := strconv.Atoi(os.Getenv("COLUMNS"))
+	if err != nil || columns <= 0 {
+		return 0, 0, fmt.Errorf("terminal size is not available")
+	}
+	lines, err := strconv.Atoi(os.Getenv("LINES"))
+	if err != nil || lines <= 0 {
+		return 0, 0, fmt.Errorf("terminal size is not available")
+	}
+	return columns, lines, nil
+}
 
 // Platform returns host platform constants.
 func (Host) Platform() Platform {
