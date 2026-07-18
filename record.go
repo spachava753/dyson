@@ -41,7 +41,7 @@ func (s *Sphere) record(
 	resp codec.SerializedVal,
 	respErr error,
 ) {
-	if !s.enableRecording {
+	if !s.recordingEnabled {
 		return
 	}
 	currChunk := s.log[len(s.log)-1]
@@ -55,9 +55,11 @@ func (s *Sphere) record(
 	s.log[len(s.log)-1] = currChunk
 }
 
-// CallInternal records the durable boundary around a host builtin. Inputs are
-// serialized before the call so unsupported values abort without performing the
-// host effect; outputs or Go errors are recorded after the call returns.
+// CallInternal records the durable boundary around a host builtin. When
+// recording is disabled, it calls the builtin directly without codec work.
+// Otherwise, inputs are serialized before the call so unsupported values abort
+// without performing the host effect; outputs or Go errors are recorded after
+// the call returns.
 // TODO: do we need to override [starlark.Builtin.BindReceiver] too?
 func (d *DurableBuiltin) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if d.s.replaying {
@@ -67,6 +69,10 @@ func (d *DurableBuiltin) CallInternal(thread *starlark.Thread, args starlark.Tup
 		// TODO: maybe if we know that this builtin called callbacks before, we can re-execute? We would need to store the fact that this called a call back before
 		return d.s.codecs[capturedCall.Response.Type].Restore(capturedCall.Response)
 	}
+	if !d.s.recordingEnabled {
+		return d.Builtin.CallInternal(thread, args, kwargs)
+	}
+
 	serializedArgs, serializedKwargs, err := d.s.serializeCallInputs(args, kwargs)
 	if err != nil {
 		return nil, err

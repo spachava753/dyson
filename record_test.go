@@ -34,7 +34,7 @@ func TestRecordingDisabledDoesNotRetainEvalLog(t *testing.T) {
 				return starlark.MakeInt(called), nil
 			}),
 		},
-	}, DefaultCodecRegistry(), false)
+	}, nil, DefaultCodecRegistry(), false)
 
 	be.Err(t, s.Eval(t.Context(), `
 load("custom.star", "tick")
@@ -42,6 +42,31 @@ value = tick()
 `), nil)
 	be.Equal(t, called, 1)
 	be.Equal(t, len(s.Log()), 0)
+}
+
+func TestRecordingDisabledSkipsCallInputSerialization(t *testing.T) {
+	called := false
+	registry := DefaultCodecRegistry()
+	delete(registry, starlark.String("").Type())
+	s := NewSphere(nil, map[string]starlark.StringDict{
+		"custom.star": {
+			"effect": starlark.NewBuiltin("effect", func(
+				thread *starlark.Thread,
+				fn *starlark.Builtin,
+				args starlark.Tuple,
+				kwargs []starlark.Tuple,
+			) (starlark.Value, error) {
+				called = true
+				return starlark.None, nil
+			}),
+		},
+	}, nil, registry, false)
+
+	be.Err(t, s.Eval(t.Context(), `
+load("custom.star", "effect")
+effect("unsupported")
+`), nil)
+	be.Equal(t, called, true)
 }
 
 func TestReplayWorksWhenRecordingDisabled(t *testing.T) {
@@ -64,7 +89,7 @@ func TestReplayWorksWhenRecordingDisabled(t *testing.T) {
 					return starlark.MakeInt(called), nil
 				}),
 			},
-		}, DefaultCodecRegistry(), record)
+		}, nil, DefaultCodecRegistry(), record)
 		return s, &called
 	}
 
@@ -98,7 +123,7 @@ func TestRecordTestdata(t *testing.T) {
 		}, map[string]starlark.StringDict{
 			"assert.star": m,
 			"custom.star": custom,
-		}, DefaultCodecRegistry(), true)
+		}, nil, DefaultCodecRegistry(), true)
 	}
 	defaultRegistry := DefaultCodecRegistry()
 	tupleVal := func(vals ...starlark.Value) codec.SerializedVal {
@@ -320,7 +345,7 @@ explode(1)
 					return starlark.None, nil
 				}),
 			},
-		}, registry, true)
+		}, nil, registry, true)
 		err = s.Eval(t.Context(), `
 load("custom.star", "effect")
 effect("unsupported")

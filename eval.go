@@ -18,7 +18,7 @@ type Sphere struct {
 	// log is the durable transcript of submitted chunks and recorded host calls.
 	log []ReplChunk
 
-	enableRecording bool
+	recordingEnabled bool
 
 	// t and g are the live Starlark VM state for incremental REPL execution.
 	t *starlark.Thread
@@ -38,12 +38,13 @@ type Sphere struct {
 }
 
 // NewSphere creates a REPL session with the provided print hook, loadable
-// modules, and codec registry. Builtins in the supplied module dictionaries and
-// nested module namespaces are wrapped per session so calls can be recorded
-// against this session.
+// modules, initial globals, and codec registry. Builtins in the supplied globals,
+// module dictionaries, and nested module namespaces are wrapped per session so
+// calls can be recorded against this session.
 func NewSphere(
 	print func(thread *starlark.Thread, msg string),
 	modules map[string]starlark.StringDict,
+	initialGlobals starlark.StringDict,
 	codecs codec.Registry,
 	record bool,
 ) *Sphere {
@@ -55,7 +56,15 @@ func NewSphere(
 		LoadBindsGlobally: true,
 		Recursion:         false,
 	}
-	s := &Sphere{fopts: fopts, enableRecording: record, g: make(starlark.StringDict), codecs: codecs}
+	s := &Sphere{
+		fopts:           fopts,
+		recordingEnabled: record,
+		g:               make(starlark.StringDict, len(initialGlobals)),
+		codecs:          codecs,
+	}
+	for name, val := range initialGlobals {
+		s.g[name] = s.wrapSessionValue(val)
+	}
 
 	sessionModules := make(map[string]starlark.StringDict, len(modules))
 	for module, sd := range modules {
@@ -107,16 +116,26 @@ func (s *Sphere) wrapSessionValue(val starlark.Value) starlark.Value {
 
 // Eval executes one submitted Starlark REPL chunk and appends it to the log
 // before execution so host calls can attach their events to the active chunk.
-//
-// Note: [starlark.ExecREPLChunk] provides the REPL semantics Dyson wants and
-// automatically brings in [starlark.Universe], but it does not accept a context;
-// ctx is reserved for the future executor/replay layer.
+// If ctx ends during execution, Eval cancels the Starlark thread; each call
+// clears cancellation left by a previous evaluation before it starts.
 func (s *Sphere) Eval(ctx context.Context, code string) error {
+	s.t.Uncancel()
+	cancelled := make(chan struct{})
+	stopCancel := context.AfterFunc(ctx, func() {
+		defer close(cancelled)
+		s.t.Cancel(context.Cause(ctx).Error())
+	})
+	defer func() {
+		if !stopCancel() {
+			<-cancelled
+		}
+	}()
+
 	f, err := s.fopts.Parse("<dyson_sphere_repl>", code, 0)
 	if err != nil {
 		return err
 	}
-	if s.enableRecording {
+	if s.recordingEnabled {
 		s.log = append(s.log, ReplChunk{
 			Code: code,
 		})
@@ -160,7 +179,7 @@ func (s *Sphere) Replay(ctx context.Context, log []ReplChunk) error {
 		s.replayChunk += 1
 	}
 
-	if !s.enableRecording {
+	if !s.recordingEnabled {
 		// Replay needs the supplied log while it is rebuilding state, but a
 		// non-recording sphere should not retain that transcript afterward.
 		s.log = nil
