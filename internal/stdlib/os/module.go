@@ -27,6 +27,8 @@ type ModuleConfig struct {
 	Process         xos.Process
 	WorkingDir      xos.WorkingDir
 	Platform        xos.Platform
+	CommandRunner   xos.CommandRunner
+	Clock           xos.Clock
 	FileDescriptors *xfs.FileDescriptors
 }
 
@@ -34,11 +36,13 @@ type ModuleConfig struct {
 func HostConfig(root string) ModuleConfig {
 	host := xos.Host{}
 	return ModuleConfig{
-		FS:         xfs.HostFS{Root: root},
-		Env:        host,
-		Process:    host,
-		WorkingDir: host,
-		Platform:   host.Platform(),
+		FS:            xfs.HostFS{Root: root},
+		Env:           host,
+		Process:       host,
+		WorkingDir:    host,
+		Platform:      host.Platform(),
+		CommandRunner: host,
+		Clock:         host,
 	}
 }
 
@@ -92,9 +96,9 @@ func loadModule(primitives *starlarkstruct.Module, platform xos.Platform) *starl
 }
 
 func makePrimitiveModule(config ModuleConfig) *starlarkstruct.Module {
-	filesystem := FileSystem{fsys: config.FS, platform: config.Platform, fds: config.FileDescriptors}
+	filesystem := FileSystem{fsys: config.FS, platform: config.Platform, fds: config.FileDescriptors, clock: config.Clock}
 	environment := Environment{env: config.Env, platform: config.Platform}
-	process := Process{process: config.Process}
+	process := Process{process: config.Process, commandRunner: config.CommandRunner}
 	workingDir := WorkingDirectory{dir: config.WorkingDir}
 	return &starlarkstruct.Module{
 		Name: ModuleName + "._primitive",

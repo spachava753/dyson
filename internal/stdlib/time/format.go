@@ -13,7 +13,7 @@ import (
 //
 // It mirrors the supported subset of Python's time.strftime:
 // https://docs.python.org/3/library/time.html#time.strftime
-func strftimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (m moduleTime) strftimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var format string
 	var value starlark.Value = starlark.None
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "format", &format, "t?", &value); err != nil {
@@ -22,7 +22,11 @@ func strftimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 	var st structTime
 	var err error
 	if value == starlark.None {
-		st = structFromTime(gotime.Now().UTC())
+		now, nowErr := m.now(fn.Name())
+		if nowErr != nil {
+			return nil, nowErr
+		}
+		st = structFromTime(now.UTC())
 	} else {
 		st, err = structTimeFromValue(fn.Name(), value)
 		if err != nil {

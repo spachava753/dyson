@@ -1,6 +1,7 @@
 package subprocess
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -56,7 +57,7 @@ func newTestThread(t *testing.T, module *starlarkstruct.Module) *starlark.Thread
 
 type fakeRunner struct{}
 
-func (fakeRunner) RunCommand(command xos.Command) (xos.CommandResult, error) {
+func (fakeRunner) RunCommand(_ context.Context, command xos.Command) (xos.CommandResult, error) {
 	if command.Shell {
 		stdout := []byte("shell:" + command.Args[0] + "\n")
 		returncode := 0

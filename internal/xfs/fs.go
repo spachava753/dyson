@@ -11,16 +11,15 @@ import (
 	"time"
 )
 
-// FS is the narrow filesystem surface exposed to Starlark stdlib modules.
-// Implementations define their own path policy, including whether parent
-// traversal such as ../name is allowed.
+// FS is the minimum filesystem surface used by Starlark stdlib modules.
+// Implementations own their path and containment policy.
 type FS interface {
 	ReadDir(name string) ([]fs.DirEntry, error)
 	Stat(name string) (fs.FileInfo, error)
 	Lstat(name string) (fs.FileInfo, error)
 }
 
-// MutFS is implemented by filesystems that support path mutation primitives.
+// MutFS optionally adds filesystem mutation operations.
 type MutFS interface {
 	Mkdir(name string, perm fs.FileMode) error
 	Remove(name string) error
@@ -34,7 +33,7 @@ type MutFS interface {
 	Readlink(name string) (string, error)
 }
 
-// File is the abstract file handle used by descriptor-style Starlark APIs.
+// File is a file handle used by descriptor-style Starlark operations.
 type File interface {
 	io.Reader
 	io.Writer
@@ -43,7 +42,7 @@ type File interface {
 	Truncate(size int64) error
 }
 
-// OpenFS is implemented by filesystems that expose file-descriptor-like I/O.
+// OpenFS optionally adds descriptor-style file I/O.
 type OpenFS interface {
 	OpenFile(name string, flag int, perm fs.FileMode) (File, error)
 }
@@ -85,14 +84,13 @@ func (f *FileDescriptors) Delete(fd int) {
 	delete(f.files, fd)
 }
 
-// PathFS is implemented by filesystems that can resolve absolute/canonical host
-// paths. Contained virtual filesystems generally should not implement it.
+// PathFS optionally adds absolute and canonical path resolution.
 type PathFS interface {
 	Abs(name string) (string, error)
 	Realpath(name string) (string, error)
 }
 
-// SameFileFS is implemented when a filesystem can compare path identity.
+// SameFileFS optionally adds path identity checks.
 type SameFileFS interface {
 	SameFile(a, b string) (bool, error)
 }
@@ -104,7 +102,7 @@ type Usage struct {
 	Free  uint64
 }
 
-// UsageFS is implemented when a filesystem can report disk usage.
+// UsageFS optionally adds filesystem capacity reporting.
 type UsageFS interface {
 	DiskUsage(name string) (Usage, error)
 }

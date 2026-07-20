@@ -13,8 +13,8 @@ import (
 //
 // It mirrors the supported subset of Python's time.gmtime:
 // https://docs.python.org/3/library/time.html#time.gmtime
-func gmtimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	sec, err := optionalSeconds(fn.Name(), args, kwargs)
+func (m moduleTime) gmtimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	sec, err := m.optionalSeconds(fn.Name(), args, kwargs)
 	if err != nil {
 		return nil, err
 	}
@@ -26,8 +26,8 @@ func gmtimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.
 //
 // It mirrors the supported subset of Python's time.localtime:
 // https://docs.python.org/3/library/time.html#time.localtime
-func localtimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	sec, err := optionalSeconds(fn.Name(), args, kwargs)
+func (m moduleTime) localtimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	sec, err := m.optionalSeconds(fn.Name(), args, kwargs)
 	if err != nil {
 		return nil, err
 	}
@@ -56,8 +56,8 @@ func mktimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.
 //
 // It mirrors the supported subset of Python's time.asctime:
 // https://docs.python.org/3/library/time.html#time.asctime
-func asctimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	st, err := optionalStructTime(fn.Name(), args, kwargs)
+func (m moduleTime) asctimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	st, err := m.optionalStructTime(fn.Name(), args, kwargs)
 	if err != nil {
 		return nil, err
 	}
@@ -69,8 +69,8 @@ func asctimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 //
 // It mirrors the supported subset of Python's time.ctime:
 // https://docs.python.org/3/library/time.html#time.ctime
-func ctimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	sec, err := optionalSeconds(fn.Name(), args, kwargs)
+func (m moduleTime) ctimeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	sec, err := m.optionalSeconds(fn.Name(), args, kwargs)
 	if err != nil {
 		return nil, err
 	}
@@ -85,13 +85,17 @@ func unsupportedTZSet(thread *starlark.Thread, fn *starlark.Builtin, args starla
 
 // optionalSeconds decodes optional seconds parameters used by gmtime,
 // localtime, and ctime, defaulting to the current wall clock.
-func optionalSeconds(name string, args starlark.Tuple, kwargs []starlark.Tuple) (float64, error) {
+func (m moduleTime) optionalSeconds(name string, args starlark.Tuple, kwargs []starlark.Tuple) (float64, error) {
 	var value starlark.Value = starlark.None
 	if err := starlark.UnpackArgs(name, args, kwargs, "seconds?", &value); err != nil {
 		return 0, err
 	}
 	if value == starlark.None {
-		return float64(gotime.Now().UnixNano()) / 1e9, nil
+		now, err := m.now(name)
+		if err != nil {
+			return 0, err
+		}
+		return float64(now.UnixNano()) / 1e9, nil
 	}
 	return number(name, "seconds", value)
 }

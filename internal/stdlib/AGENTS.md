@@ -7,7 +7,7 @@ This directory contains loadable Starlark standard-library compatibility modules
 - Put each module in its own package under `internal/stdlib/<name>`.
 - Export `const ModuleName = "<name>"`.
 - Export `var Module = &starlarkstruct.Module{Name: ModuleName, Members: starlark.StringDict{...}}` for static immutable module namespaces, load an embedded Starlark source file into `var Module` when most behavior is clearer in Starlark, or `func MakeModule(...) *starlarkstruct.Module` when a module needs per-session state.
-- Add the module to the root `dyson.StdlibModules()` factory as `{ModuleName + ".star": {ModuleName: Module}}` or by calling its module factory.
+- Add the module to the root `dyson.StdlibModules(config)` factory as `{ModuleName + ".star": {ModuleName: Module}}` or by calling its module factory. Host-backed behavior must come from `StdlibConfig`; do not construct ambient host capabilities in the root factory.
 - Builtins should be named with fully qualified names such as `ModuleName + ".compile"` so errors read like `re.compile: ...`.
 - For methods on custom Starlark values, follow Go Starlark's native bound-method pattern: keep a package-level static method table of `*starlark.Builtin` values, return `method.BindReceiver(value)` from `Attr`, and read the receiver inside the package-level builtin with `fn.Receiver()`. Avoid allocating per-attribute closure builtins such as `starlark.NewBuiltin("type.method", value.method(name))`.
 - Put the method's implementation directly in the receiver-aware builtin when it is specific to that method. Use plain package-level helpers only for genuinely shared algorithms; avoid creating trivial receiver methods that bound builtins immediately call through.
@@ -17,14 +17,14 @@ This directory contains loadable Starlark standard-library compatibility modules
 
 ## Load Semantics
 
-Callers should pass the result of `dyson.StdlibModules()` into `NewSphere` or their own Starlark load implementation. Go Starlark `load` imports named symbols; bare `load("re.star")` is invalid. For Python-like namespacing, expose the module namespace as a symbol and import it explicitly:
+Callers should pass the result of `dyson.StdlibModules(config)` into `NewSphere` or their own Starlark load implementation. Go Starlark `load` imports named symbols; bare `load("re.star")` is invalid. For Python-like namespacing, expose the module namespace as a symbol and import it explicitly:
 
 ```python
 load("re.star", "re")
 pattern = re.compile("[a-z]+", re.I | re.M)
 ```
 
-The root `dyson.StdlibModules()` factory returns only namespace symbols for stdlib modules. Direct member imports such as `load("re.star", "compile")` are intentionally unsupported.
+The root `dyson.StdlibModules(config)` factory returns only namespace symbols for stdlib modules. Direct member imports such as `load("re.star", "compile")` are intentionally unsupported.
 
 ## Durable Values
 

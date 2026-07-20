@@ -1,23 +1,36 @@
 package time
 
 import (
+	"context"
 	"fmt"
 	gotime "time"
 
+	"github.com/spachava753/dyson/internal/xctx"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 )
+
+func (m moduleTime) now(fn string) (gotime.Time, error) {
+	if m.clock == nil {
+		return gotime.Time{}, fmt.Errorf("%s: clock is not configured", fn)
+	}
+	return m.clock.Now(), nil
+}
 
 // timeBuiltin implements time.time, returning the current Unix timestamp as a
 // floating-point number of seconds.
 //
 // It mirrors the supported subset of Python's time.time:
 // https://docs.python.org/3/library/time.html#time.time
-func timeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (m moduleTime) timeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs); err != nil {
 		return nil, err
 	}
-	return starlark.Float(float64(gotime.Now().UnixNano()) / 1e9), nil
+	now, err := m.now(fn.Name())
+	if err != nil {
+		return nil, err
+	}
+	return starlark.Float(float64(now.UnixNano()) / 1e9), nil
 }
 
 // timeNSBuiltin implements time.time_ns, returning the current Unix timestamp
@@ -25,15 +38,15 @@ func timeBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tu
 //
 // It mirrors the supported subset of Python's time.time_ns:
 // https://docs.python.org/3/library/time.html#time.time_ns
-func timeNSBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (m moduleTime) timeNSBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs); err != nil {
 		return nil, err
 	}
-	return starlark.MakeInt64(gotime.Now().UnixNano()), nil
-}
-
-type monotonicTime struct {
-	start gotime.Time
+	now, err := m.now(fn.Name())
+	if err != nil {
+		return nil, err
+	}
+	return starlark.MakeInt64(now.UnixNano()), nil
 }
 
 // monotonicBuiltin implements time.monotonic and time.perf_counter, returning
@@ -43,11 +56,15 @@ type monotonicTime struct {
 // time.perf_counter:
 // https://docs.python.org/3/library/time.html#time.monotonic
 // https://docs.python.org/3/library/time.html#time.perf_counter
-func (m monotonicTime) monotonicBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (m moduleTime) monotonicBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs); err != nil {
 		return nil, err
 	}
-	return starlark.Float(float64(gotime.Since(m.start).Nanoseconds()) / 1e9), nil
+	now, err := m.now(fn.Name())
+	if err != nil {
+		return nil, err
+	}
+	return starlark.Float(float64(now.Sub(m.start).Nanoseconds()) / 1e9), nil
 }
 
 // monotonicNSBuiltin implements time.monotonic_ns and time.perf_counter_ns,
@@ -56,11 +73,15 @@ func (m monotonicTime) monotonicBuiltin(thread *starlark.Thread, fn *starlark.Bu
 // It mirrors the supported subset of Python's nanosecond monotonic clocks:
 // https://docs.python.org/3/library/time.html#time.monotonic_ns
 // https://docs.python.org/3/library/time.html#time.perf_counter_ns
-func (m monotonicTime) monotonicNSBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (m moduleTime) monotonicNSBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs); err != nil {
 		return nil, err
 	}
-	return starlark.MakeInt64(gotime.Since(m.start).Nanoseconds()), nil
+	now, err := m.now(fn.Name())
+	if err != nil {
+		return nil, err
+	}
+	return starlark.MakeInt64(now.Sub(m.start).Nanoseconds()), nil
 }
 
 // sleepBuiltin implements time.sleep, blocking for the requested non-negative
@@ -68,7 +89,7 @@ func (m monotonicTime) monotonicNSBuiltin(thread *starlark.Thread, fn *starlark.
 //
 // It mirrors the supported subset of Python's time.sleep:
 // https://docs.python.org/3/library/time.html#time.sleep
-func sleepBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (m moduleTime) sleepBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var seconds starlark.Value
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "seconds", &seconds); err != nil {
 		return nil, err
@@ -77,7 +98,16 @@ func sleepBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.T
 	if err != nil {
 		return nil, err
 	}
-	gotime.Sleep(d)
+	if m.clock == nil {
+		return nil, fmt.Errorf("%s: clock is not configured", fn.Name())
+	}
+	ctx := xctx.FromLocal(thread)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := m.clock.Sleep(ctx, d); err != nil {
+		return nil, err
+	}
 	return starlark.None, nil
 }
 

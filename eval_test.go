@@ -69,7 +69,7 @@ func TestEvalTestdata(t *testing.T) {
 			m, err := starlarktest.LoadAssertModule()
 			be.Err(t, err, nil)
 			registry := DefaultCodecRegistry()
-			mods := StdlibModules()
+			mods := StdlibModules(HostStdlibConfig("."))
 			mods[math.Module.Name+".star"] = starlark.StringDict{
 				"math": math.Module,
 			}

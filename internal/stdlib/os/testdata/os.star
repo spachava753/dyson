@@ -119,11 +119,11 @@ load("os.star", "os")
 os.getenv("PATH")  ### "os.getenv: environment operations are not configured"
 
 ---
-# Process operations are a separate host domain from filesystem access.
+# Command execution is a separate host capability from process metadata.
 load("assert.star", "assert")
 load("os.star", "os")
 
-os.system("echo hidden")  ### "os.system: process operations are not configured"
+os.system("echo hidden")  ### "os.system: subprocess execution is not configured"
 
 ---
 # Descriptor-style file I/O requires an xfs.OpenFS implementation.

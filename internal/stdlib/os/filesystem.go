@@ -18,6 +18,7 @@ type FileSystem struct {
 	fsys     xfs.FS
 	platform xos.Platform
 	fds      *xfs.FileDescriptors
+	clock    xos.Clock
 }
 
 var dirEntryMethods = map[string]*starlark.Builtin{
@@ -495,8 +496,14 @@ func (f FileSystem) utime(thread *starlark.Thread, fn *starlark.Builtin, args st
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "path", &path, "times?", &timesVal); err != nil {
 		return nil, err
 	}
-	atime, mtime := time.Now(), time.Now()
-	if timesVal != starlark.None {
+	var atime, mtime time.Time
+	if timesVal == starlark.None {
+		if f.clock == nil {
+			return nil, fmt.Errorf("%s: clock is not configured", fn.Name())
+		}
+		atime = f.clock.Now()
+		mtime = atime
+	} else {
 		seq, ok := timesVal.(starlark.Indexable)
 		if !ok || seq.Len() != 2 {
 			return nil, fmt.Errorf("%s: times must be a 2-item sequence", fn.Name())

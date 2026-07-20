@@ -8,20 +8,20 @@ import (
 
 const ctxKey = "dysonCtxKey"
 
-func FromLocal(t *starlark.Thread) context.Context {
-	if t == nil {
+func FromLocal(thread *starlark.Thread) context.Context {
+	if thread == nil {
 		return nil
 	}
-	c, _ := t.Local(ctxKey).(context.Context)
-	return c
+	ctx, _ := thread.Local(ctxKey).(context.Context)
+	return ctx
 }
 
-func WithContext(t *starlark.Thread, c context.Context) {
-	t.SetLocal(ctxKey, c)
+func WithContext(thread *starlark.Thread, ctx context.Context) {
+	thread.SetLocal(ctxKey, ctx)
 }
 
-func Check(t *starlark.Thread) error {
-	ctx := FromLocal(t)
+func Check(thread *starlark.Thread) error {
+	ctx := FromLocal(thread)
 	if ctx == nil {
 		return nil
 	}

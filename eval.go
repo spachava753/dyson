@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/spachava753/dyson/internal/codec"
+	"github.com/spachava753/dyson/internal/xctx"
 	"go.starlark.net/repl"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
@@ -13,7 +14,8 @@ import (
 
 // Sphere owns one durable REPL session: the Starlark thread, globals, parser
 // options, codec registry, and the append-only chunk/event log produced by
-// evaluation.
+// evaluation. A Sphere is not safe for concurrent use; callers must serialize
+// calls to Eval and Replay and access to Log.
 type Sphere struct {
 	// log is the durable transcript of submitted chunks and recorded host calls.
 	log []ReplChunk
@@ -57,10 +59,10 @@ func NewSphere(
 		Recursion:         false,
 	}
 	s := &Sphere{
-		fopts:           fopts,
+		fopts:            fopts,
 		recordingEnabled: record,
-		g:               make(starlark.StringDict, len(initialGlobals)),
-		codecs:          codecs,
+		g:                make(starlark.StringDict, len(initialGlobals)),
+		codecs:           codecs,
 	}
 	for name, val := range initialGlobals {
 		s.g[name] = s.wrapSessionValue(val)
@@ -120,14 +122,22 @@ func (s *Sphere) wrapSessionValue(val starlark.Value) starlark.Value {
 // clears cancellation left by a previous evaluation before it starts.
 func (s *Sphere) Eval(ctx context.Context, code string) error {
 	s.t.Uncancel()
-	cancelled := make(chan struct{})
-	stopCancel := context.AfterFunc(ctx, func() {
-		defer close(cancelled)
-		s.t.Cancel(context.Cause(ctx).Error())
-	})
-	defer func() {
-		if !stopCancel() {
-			<-cancelled
+	// Thread.SetLocal is documented as setup-only. Dyson deliberately updates
+	// this local between sequential REPL chunks, while no Starlark code is
+	// running, so blocking builtins can receive the context for this Eval.
+	xctx.WithContext(s.t, ctx)
+	// Closing finished after Eval returns lets the watcher exit without
+	// interrupting a normally completed evaluation.
+	finished := make(chan struct{})
+	defer close(finished)
+	go func() {
+		select {
+		case <-ctx.Done():
+			// Cancel interrupts interpreted Starlark; it is not resource cleanup
+			// and cannot stop a blocking host builtin. Builtins receive ctx above
+			// and must honor it themselves.
+			s.t.Cancel(context.Cause(ctx).Error())
+		case <-finished:
 		}
 	}()
 

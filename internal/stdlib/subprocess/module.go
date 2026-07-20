@@ -1,9 +1,11 @@
 package subprocess
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"github.com/spachava753/dyson/internal/xctx"
 	"github.com/spachava753/dyson/internal/xos"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
@@ -125,7 +127,7 @@ func runBuiltin(runner xos.CommandRunner) func(*starlark.Thread, *starlark.Built
 		if err != nil {
 			return nil, err
 		}
-		result, err := runCommand(fn.Name(), runner, xos.Command{
+		result, err := runCommand(threadContext(thread), fn.Name(), runner, xos.Command{
 			Args:   command,
 			Shell:  shell,
 			Input:  inputBytes,
@@ -154,7 +156,7 @@ func getoutputBuiltin(runner xos.CommandRunner) func(*starlark.Thread, *starlark
 		if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "cmd", &command); err != nil {
 			return nil, err
 		}
-		statusOutput, err := runShellText(fn.Name(), runner, command)
+		statusOutput, err := runShellText(threadContext(thread), fn.Name(), runner, command)
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +170,7 @@ func getstatusoutputBuiltin(runner xos.CommandRunner) func(*starlark.Thread, *st
 		if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "cmd", &command); err != nil {
 			return nil, err
 		}
-		statusOutput, err := runShellText(fn.Name(), runner, command)
+		statusOutput, err := runShellText(threadContext(thread), fn.Name(), runner, command)
 		if err != nil {
 			return nil, err
 		}
@@ -196,8 +198,8 @@ type statusOutput struct {
 	output string
 }
 
-func runShellText(fn string, runner xos.CommandRunner, command string) (statusOutput, error) {
-	result, err := runCommand(fn, runner, xos.Command{Args: []string{command}, Shell: true, Stdout: xos.StreamPipe, Stderr: xos.StreamStdout})
+func runShellText(ctx context.Context, fn string, runner xos.CommandRunner, command string) (statusOutput, error) {
+	result, err := runCommand(ctx, fn, runner, xos.Command{Args: []string{command}, Shell: true, Stdout: xos.StreamPipe, Stderr: xos.StreamStdout})
 	if err != nil {
 		return statusOutput{}, err
 	}
@@ -206,11 +208,18 @@ func runShellText(fn string, runner xos.CommandRunner, command string) (statusOu
 	return statusOutput{status: result.ReturnCode, output: output}, nil
 }
 
-func runCommand(fn string, runner xos.CommandRunner, command xos.Command) (xos.CommandResult, error) {
+func runCommand(ctx context.Context, fn string, runner xos.CommandRunner, command xos.Command) (xos.CommandResult, error) {
 	if runner == nil {
 		return xos.CommandResult{}, fmt.Errorf("%s: subprocess execution is not configured", fn)
 	}
-	return runner.RunCommand(command)
+	return runner.RunCommand(ctx, command)
+}
+
+func threadContext(thread *starlark.Thread) context.Context {
+	if ctx := xctx.FromLocal(thread); ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }
 
 func commandArgs(fn string, val starlark.Value, shell bool) ([]string, error) {

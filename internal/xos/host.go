@@ -2,6 +2,7 @@ package xos
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -11,9 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
-// Env controls environment reads and writes exposed by os and os.path.
+// Env controls environment reads and writes exposed to Starlark.
 type Env interface {
 	Environ() []string
 	LookupEnv(key string) (string, bool)
@@ -23,12 +25,11 @@ type Env interface {
 	ExpandEnv(path string) string
 }
 
-// Process controls process and shell primitives exposed by os.
+// Process controls process identity and signaling primitives.
 type Process interface {
 	Getpid() int
 	Getppid() int
-	Kill(pid, sig int) error
-	System(command string) (int, error)
+	Kill(pid, signal int) error
 	Getuid() int
 	Geteuid() int
 	Getgid() int
@@ -66,23 +67,29 @@ type CommandResult struct {
 	Stderr     []byte
 }
 
-// CommandRunner controls subprocess command execution.
+// CommandRunner executes subprocess requests and must honor context cancellation.
 type CommandRunner interface {
-	RunCommand(Command) (CommandResult, error)
+	RunCommand(ctx context.Context, command Command) (CommandResult, error)
 }
 
-// WorkingDir controls process working-directory-like operations.
+// Clock provides wall time, monotonic elapsed time, and sleeping.
+type Clock interface {
+	Now() time.Time
+	Sleep(ctx context.Context, duration time.Duration) error
+}
+
+// WorkingDir controls working-directory-like operations.
 type WorkingDir interface {
 	Getwd() (string, error)
 	Chdir(path string) error
 }
 
-// Terminal controls terminal-size queries exposed by shutil.
+// Terminal controls terminal-size queries.
 type Terminal interface {
 	TerminalSize() (columns, lines int, err error)
 }
 
-// OpenFlags are the integer constants consumed by filesystem OpenFile implementations.
+// OpenFlags contains integer flags consumed by filesystem OpenFile methods.
 type OpenFlags struct {
 	ReadOnly  int
 	WriteOnly int
@@ -94,7 +101,7 @@ type OpenFlags struct {
 	Truncate  int
 }
 
-// Platform describes the OS constants visible through the Starlark os module.
+// Platform contains OS constants visible to Starlark modules.
 type Platform struct {
 	OSName            string
 	PathListSeparator string
@@ -102,7 +109,7 @@ type Platform struct {
 	OpenFlags         OpenFlags
 }
 
-// Platformer is implemented by hosts that provide platform constants.
+// Platformer supplies host platform constants.
 type Platformer interface {
 	Platform() Platform
 }
@@ -161,26 +168,6 @@ func (Host) Kill(pid, sig int) error {
 	return proc.Signal(syscall.Signal(sig))
 }
 
-// System runs command through the host shell and returns its exit code.
-func (Host) System(command string) (int, error) {
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/C", command)
-	} else {
-		cmd = exec.Command("/bin/sh", "-c", command)
-	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	if err := cmd.Run(); err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
-			return exit.ExitCode(), nil
-		}
-		return 0, err
-	}
-	return 0, nil
-}
-
 // Getuid returns the host user id.
 func (Host) Getuid() int { return os.Getuid() }
 
@@ -200,7 +187,7 @@ func (Host) Getgroups() ([]int, error) { return os.Getgroups() }
 func (Host) Umask(mask int) int { return syscall.Umask(mask) }
 
 // RunCommand executes a host subprocess and captures requested streams.
-func (Host) RunCommand(command Command) (CommandResult, error) {
+func (Host) RunCommand(ctx context.Context, command Command) (CommandResult, error) {
 	if len(command.Args) == 0 {
 		return CommandResult{}, exec.ErrNotFound
 	}
@@ -208,9 +195,9 @@ func (Host) RunCommand(command Command) (CommandResult, error) {
 	var cmd *exec.Cmd
 	if command.Shell {
 		if runtime.GOOS == "windows" {
-			cmd = exec.Command("cmd", append([]string{"/C", command.Args[0]}, command.Args[1:]...)...)
+			cmd = exec.CommandContext(ctx, "cmd", append([]string{"/C", command.Args[0]}, command.Args[1:]...)...)
 		} else {
-			cmd = exec.Command("/bin/sh", append([]string{"-c", command.Args[0]}, command.Args[1:]...)...)
+			cmd = exec.CommandContext(ctx, "/bin/sh", append([]string{"-c", command.Args[0]}, command.Args[1:]...)...)
 		}
 	} else {
 		path := command.Args[0]
@@ -221,7 +208,7 @@ func (Host) RunCommand(command Command) (CommandResult, error) {
 			}
 			path = resolved
 		}
-		cmd = exec.Command(path, command.Args[1:]...)
+		cmd = exec.CommandContext(ctx, path, command.Args[1:]...)
 	}
 	if command.Dir != "" {
 		cmd.Dir = command.Dir
@@ -262,6 +249,9 @@ func (Host) RunCommand(command Command) (CommandResult, error) {
 
 	result := CommandResult{}
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return CommandResult{}, ctx.Err()
+		}
 		if exit, ok := err.(*exec.ExitError); ok {
 			result.ReturnCode = exit.ExitCode()
 		} else {
@@ -316,6 +306,19 @@ func (Host) TerminalSize() (int, int, error) {
 		return 0, 0, fmt.Errorf("terminal size is not available")
 	}
 	return columns, lines, nil
+}
+
+// Now returns the current host time.
+func (Host) Now() time.Time { return time.Now() }
+
+// Sleep blocks for duration or until ctx ends.
+func (Host) Sleep(ctx context.Context, duration time.Duration) error {
+	select {
+	case <-time.After(duration):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Platform returns host platform constants.

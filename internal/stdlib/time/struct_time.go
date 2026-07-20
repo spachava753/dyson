@@ -153,13 +153,17 @@ var structTimeAttrs = []string{"tm_year", "tm_mon", "tm_mday", "tm_hour", "tm_mi
 
 // optionalStructTime decodes optional struct_time-like parameters used by
 // asctime and strftime, defaulting to current UTC localtime.
-func optionalStructTime(name string, args starlark.Tuple, kwargs []starlark.Tuple) (structTime, error) {
+func (m moduleTime) optionalStructTime(name string, args starlark.Tuple, kwargs []starlark.Tuple) (structTime, error) {
 	var value starlark.Value = starlark.None
 	if err := starlark.UnpackArgs(name, args, kwargs, "t?", &value); err != nil {
 		return structTime{}, err
 	}
 	if value == starlark.None {
-		return structFromTime(gotime.Now().UTC()), nil
+		now, err := m.now(name)
+		if err != nil {
+			return structTime{}, err
+		}
+		return structFromTime(now.UTC()), nil
 	}
 	return structTimeFromValue(name, value)
 }

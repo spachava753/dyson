@@ -1,7 +1,8 @@
 package dyson
 
 import (
-	gotime "time"
+	"errors"
+	"io/fs"
 
 	stdlibglob "github.com/spachava753/dyson/internal/stdlib/glob"
 	stdlibgrp "github.com/spachava753/dyson/internal/stdlib/grp"
@@ -14,21 +15,53 @@ import (
 	stdlibtempfile "github.com/spachava753/dyson/internal/stdlib/tempfile"
 	stdlibtime "github.com/spachava753/dyson/internal/stdlib/time"
 	"github.com/spachava753/dyson/internal/xfs"
-	"github.com/spachava753/dyson/internal/xos"
 	"go.starlark.net/starlark"
 )
 
-// StdlibModules returns Dyson's loadable standard-library compatibility
-// modules, keyed by the Starlark load path. Each call returns fresh filesystem
-// backed os/glob modules and a fresh time module so per-session policy and
-// monotonic clocks do not share state.
-func StdlibModules() map[string]starlark.StringDict {
+var errFilesystemNotConfigured = errors.New("filesystem operations are not configured")
+
+type unconfiguredFileSystem struct{}
+
+func (unconfiguredFileSystem) ReadDir(string) ([]fs.DirEntry, error) {
+	return nil, errFilesystemNotConfigured
+}
+
+func (unconfiguredFileSystem) Stat(string) (fs.FileInfo, error) {
+	return nil, errFilesystemNotConfigured
+}
+
+func (unconfiguredFileSystem) Lstat(string) (fs.FileInfo, error) {
+	return nil, errFilesystemNotConfigured
+}
+
+// StdlibModules constructs Dyson's loadable standard-library compatibility
+// modules from explicit host capabilities. Each call creates fresh module state
+// and one descriptor table shared by os and tempfile; the configured filesystem
+// and environment are shared by every module that consumes them.
+func StdlibModules(config StdlibConfig) map[string]starlark.StringDict {
+	fileSystem := config.FS
+	if fileSystem == nil {
+		fileSystem = unconfiguredFileSystem{}
+	}
 	fileDescriptors := xfs.NewFileDescriptors()
-	osConfig := stdlibos.HostConfig(".")
-	osConfig.FileDescriptors = fileDescriptors
-	osModule := stdlibos.MakeModule(osConfig)
+	osModule := stdlibos.MakeModule(stdlibos.ModuleConfig{
+		FS:              fileSystem,
+		Env:             config.Env,
+		Process:         config.Process,
+		WorkingDir:      config.WorkingDirectory,
+		Platform:        config.Platform,
+		CommandRunner:   config.CommandRunner,
+		Clock:           config.Clock,
+		FileDescriptors: fileDescriptors,
+	})
 	globModule := stdlibglob.MakeModule(osModule)
-	shutilModule := stdlibshutil.MakeModule(stdlibshutil.HostConfig(".", osModule))
+	shutilModule := stdlibshutil.MakeModule(stdlibshutil.ModuleConfig{
+		OS:       osModule,
+		FS:       config.FS,
+		Env:      config.Env,
+		Terminal: config.Terminal,
+		Platform: config.Platform,
+	})
 
 	return map[string]starlark.StringDict{
 		stdlibglob.ModuleName + ".star": {
@@ -53,13 +86,17 @@ func StdlibModules() map[string]starlark.StringDict {
 			stdlibsignal.ModuleName: stdlibsignal.Module,
 		},
 		stdlibsubprocess.ModuleName + ".star": {
-			stdlibsubprocess.ModuleName: stdlibsubprocess.Module,
+			stdlibsubprocess.ModuleName: stdlibsubprocess.MakeModule(config.CommandRunner),
 		},
 		stdlibtempfile.ModuleName + ".star": {
-			stdlibtempfile.ModuleName: stdlibtempfile.MakeModule(stdlibtempfile.ModuleConfig{FS: xfs.HostFS{Root: "."}, Env: xos.Host{}, FileDescriptors: fileDescriptors}),
+			stdlibtempfile.ModuleName: stdlibtempfile.MakeModule(stdlibtempfile.ModuleConfig{
+				FS:              config.FS,
+				Env:             config.Env,
+				FileDescriptors: fileDescriptors,
+			}),
 		},
 		stdlibtime.ModuleName + ".star": {
-			stdlibtime.ModuleName: stdlibtime.MakeModule(gotime.Now()),
+			stdlibtime.ModuleName: stdlibtime.MakeModule(config.Clock),
 		},
 	}
 }

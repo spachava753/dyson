@@ -1,15 +1,18 @@
 package os
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
+	"github.com/spachava753/dyson/internal/xctx"
 	"github.com/spachava753/dyson/internal/xos"
 	"go.starlark.net/starlark"
 )
 
 type Process struct {
-	process xos.Process
+	process       xos.Process
+	commandRunner xos.CommandRunner
 }
 
 type WorkingDirectory struct {
@@ -104,15 +107,18 @@ func (f Process) system(thread *starlark.Thread, fn *starlark.Builtin, args star
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "command", &command); err != nil {
 		return nil, err
 	}
-	fsys, err := f.configuredProcess(fn.Name())
+	if f.commandRunner == nil {
+		return nil, fmt.Errorf("%s: subprocess execution is not configured", fn.Name())
+	}
+	ctx := xctx.FromLocal(thread)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := f.commandRunner.RunCommand(ctx, xos.Command{Args: []string{command}, Shell: true})
 	if err != nil {
 		return nil, err
 	}
-	code, err := fsys.System(command)
-	if err != nil {
-		return nil, err
-	}
-	return starlark.MakeInt(code), nil
+	return starlark.MakeInt(result.ReturnCode), nil
 }
 
 func (f Process) getuid(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {

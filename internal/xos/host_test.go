@@ -17,7 +17,7 @@ func TestHostRunCommandUsesEnvPathForLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := (Host{}).RunCommand(Command{
+	result, err := (Host{}).RunCommand(t.Context(), Command{
 		Args:   []string{"dyson-xos-test"},
 		Env:    []string{"PATH=" + dir},
 		Stdout: StreamPipe,
