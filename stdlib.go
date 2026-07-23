@@ -44,13 +44,14 @@ func StdlibModules(config StdlibConfig) map[string]starlark.StringDict {
 		fileSystem = unconfiguredFileSystem{}
 	}
 	fileDescriptors := xfs.NewFileDescriptors()
+	commandRunner := config.configuredCommandRunner()
 	osModule := stdlibos.MakeModule(stdlibos.ModuleConfig{
 		FS:              fileSystem,
 		Env:             config.Env,
 		Process:         config.Process,
 		WorkingDir:      config.WorkingDirectory,
 		Platform:        config.Platform,
-		CommandRunner:   config.CommandRunner,
+		CommandRunner:   commandRunner,
 		Clock:           config.Clock,
 		FileDescriptors: fileDescriptors,
 	})
@@ -86,7 +87,7 @@ func StdlibModules(config StdlibConfig) map[string]starlark.StringDict {
 			stdlibsignal.ModuleName: stdlibsignal.Module,
 		},
 		stdlibsubprocess.ModuleName + ".star": {
-			stdlibsubprocess.ModuleName: stdlibsubprocess.MakeModule(config.CommandRunner),
+			stdlibsubprocess.ModuleName: stdlibsubprocess.MakeModule(commandRunner),
 		},
 		stdlibtempfile.ModuleName + ".star": {
 			stdlibtempfile.ModuleName: stdlibtempfile.MakeModule(stdlibtempfile.ModuleConfig{

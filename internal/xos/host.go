@@ -40,10 +40,12 @@ type Process interface {
 
 // Command describes one subprocess execution request.
 type Command struct {
-	Args   []string
-	Shell  bool
-	Input  []byte
-	Env    []string
+	Args  []string
+	Shell bool
+	Input []byte
+	Env   []string
+	// Dir is the command working directory. An empty value leaves default
+	// directory selection to the caller of CommandRunner.
 	Dir    string
 	Stdin  StreamMode
 	Stdout StreamMode

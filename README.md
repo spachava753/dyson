@@ -36,7 +36,7 @@ modules := dyson.StdlibModules(config)
 sphere := dyson.NewSphere(print, modules, initialGlobals, nil, false)
 ```
 
-`root` is a base for relative paths, not a sandbox boundary. Absolute paths and `..` retain normal host semantics. The host configuration can also mutate environment variables, change the process working directory and umask, and signal processes, so use it only for trusted code or behind an appropriate policy layer.
+`root` is a base for relative paths, not a sandbox boundary. Absolute paths and `..` retain normal host semantics. When command execution is enabled, commands that omit `cwd` also start in `root`. The host configuration can mutate environment variables, change the process working directory and umask, and signal processes, so use it only for trusted code or behind an appropriate policy layer.
 
 Command execution is a separate, visible opt-in. A downstream caller such as CPE can enable full host filesystem and subprocess access as follows:
 

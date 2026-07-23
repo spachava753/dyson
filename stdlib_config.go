@@ -1,6 +1,8 @@
 package dyson
 
 import (
+	"context"
+
 	"github.com/spachava753/dyson/internal/xfs"
 	"github.com/spachava753/dyson/internal/xos"
 )
@@ -51,6 +53,8 @@ type OpenFlags = xos.OpenFlags
 type Platform = xos.Platform
 
 // Command describes a subprocess request made by the Starlark standard library.
+// For a config returned by HostStdlibConfig, StdlibModules normalizes an empty
+// Dir to the configured filesystem root before invoking CommandRunner.
 type Command = xos.Command
 
 // StreamMode describes how a subprocess standard stream is connected.
@@ -66,7 +70,8 @@ const (
 // CommandResult is the completed result of a subprocess execution.
 type CommandResult = xos.CommandResult
 
-// CommandRunner executes subprocess requests and must honor context cancellation.
+// CommandRunner executes normalized subprocess requests and must honor context
+// cancellation. See Command.Dir for HostStdlibConfig's default-directory rule.
 type CommandRunner = xos.CommandRunner
 
 // StdlibConfig declares the host capabilities shared by standard-library
@@ -96,7 +101,8 @@ type StdlibConfig struct {
 	Platform Platform
 
 	// CommandRunner supplies os.system and subprocess command execution. Nil
-	// keeps both modules fail-closed.
+	// keeps both modules fail-closed. For configs returned by HostStdlibConfig,
+	// commands with an empty Dir are passed to the runner with Dir set to root.
 	CommandRunner CommandRunner
 
 	// Clock supplies current time and sleeping to time, plus implicit timestamps
@@ -104,12 +110,38 @@ type StdlibConfig struct {
 	Clock Clock
 }
 
+type defaultDirectoryCommandRunner struct {
+	runner CommandRunner
+	dir    string
+}
+
+func (r defaultDirectoryCommandRunner) RunCommand(ctx context.Context, command Command) (CommandResult, error) {
+	if command.Dir == "" {
+		command.Dir = r.dir
+	}
+	return r.runner.RunCommand(ctx, command)
+}
+
+// configuredCommandRunner keeps command execution aligned with HostFS's base
+// directory without overriding an explicit subprocess cwd.
+func (c StdlibConfig) configuredCommandRunner() CommandRunner {
+	if c.CommandRunner == nil {
+		return nil
+	}
+	fsys, ok := c.FS.(xfs.HostFS)
+	if !ok {
+		return c.CommandRunner
+	}
+	return defaultDirectoryCommandRunner{runner: c.CommandRunner, dir: fsys.Root}
+}
+
 // HostStdlibConfig grants broad access to the host filesystem, mutable process
 // environment, process identity and signaling, working directory, terminal,
 // platform constants, and clock. root is only the base for relative filesystem
 // paths, not a containment boundary: absolute paths and parent traversal retain
 // normal host semantics. Command execution remains disabled unless a
-// CommandRunner is assigned explicitly.
+// CommandRunner is assigned explicitly; commands without an explicit working
+// directory then start in root.
 func HostStdlibConfig(root string) StdlibConfig {
 	host := xos.Host{}
 	return StdlibConfig{
@@ -125,7 +157,8 @@ func HostStdlibConfig(root string) StdlibConfig {
 
 // HostCommandRunner returns a runner that may execute arbitrary commands on the
 // host. Assign it only when the evaluated Starlark code is trusted to launch
-// processes with the current user's authority.
+// processes with the current user's authority. When assigned to a config from
+// HostStdlibConfig, commands that omit cwd start in that config's root.
 func HostCommandRunner() CommandRunner {
 	return xos.Host{}
 }

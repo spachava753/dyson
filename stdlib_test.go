@@ -253,6 +253,31 @@ if result.returncode != 0:
 `), nil)
 }
 
+func TestHostStdlibConfigUsesRootAsDefaultCommandDirectory(t *testing.T) {
+	root := t.TempDir()
+	runner := &recordingCommandRunner{}
+	config := dyson.HostStdlibConfig(root)
+	config.CommandRunner = runner
+	sphere := dyson.NewSphere(nil, dyson.StdlibModules(config), nil, nil, false)
+
+	be.Err(t, sphere.Eval(t.Context(), `
+load("subprocess.star", "subprocess")
+subprocess.run(["tool"])
+`), nil)
+	be.Equal(t, runner.command.Dir, root)
+
+	be.Err(t, sphere.Eval(t.Context(), `
+subprocess.run(["tool"], cwd="/explicit")
+`), nil)
+	be.Equal(t, runner.command.Dir, "/explicit")
+
+	be.Err(t, sphere.Eval(t.Context(), `
+load("os.star", "os")
+os.system("tool")
+`), nil)
+	be.Equal(t, runner.command.Dir, root)
+}
+
 func TestStdlibModulesWithoutClockFailsClosed(t *testing.T) {
 	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{}), nil, nil, false)
 
