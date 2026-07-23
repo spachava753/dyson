@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson/internal/chunkedfile"
@@ -26,6 +27,56 @@ func TestEvalStopsWhenContextEnds(t *testing.T) {
 	}
 
 	be.Err(t, s.Eval(t.Context(), `completed = True`), nil)
+}
+
+// delayedCancellation pauses the cancellation callback immediately before
+// Thread.Cancel, after context propagation has already completed.
+type delayedCancellation struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (e *delayedCancellation) Error() string {
+	close(e.started)
+	<-e.release
+	return context.Canceled.Error()
+}
+
+func TestEvalCancellationCannotOutliveCall(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		printStarted := make(chan struct{})
+		releasePrint := make(chan struct{})
+		s := NewSphere(func(_ *starlark.Thread, _ string) {
+			close(printStarted)
+			<-releasePrint
+		}, nil, nil, DefaultCodecRegistry(), false)
+		cause := &delayedCancellation{
+			started: make(chan struct{}),
+			release: make(chan struct{}),
+		}
+		ctx, cancel := context.WithCancelCause(t.Context())
+		result := make(chan error, 1)
+		go func() {
+			result <- s.Eval(ctx, `print("running")`)
+		}()
+
+		<-printStarted
+		cancel(cause)
+		<-cause.started
+		close(releasePrint)
+		synctest.Wait()
+
+		select {
+		case err := <-result:
+			close(cause.release)
+			t.Fatalf("Eval returned before its cancellation callback: %v", err)
+		default:
+		}
+
+		close(cause.release)
+		<-result
+		be.Err(t, s.Eval(t.Context(), `completed = True`), nil)
+	})
 }
 
 func TestNewSphereAcceptsInitialGlobals(t *testing.T) {

@@ -119,25 +119,28 @@ func (s *Sphere) wrapSessionValue(val starlark.Value) starlark.Value {
 // Eval executes one submitted Starlark REPL chunk and appends it to the log
 // before execution so host calls can attach their events to the active chunk.
 // If ctx ends during execution, Eval cancels the Starlark thread; each call
-// clears cancellation left by a previous evaluation before it starts.
+// clears cancellation left by a previous evaluation before it starts. Eval
+// waits for its cancellation callback to stop before returning so that callback
+// cannot interrupt the next sequential call.
 func (s *Sphere) Eval(ctx context.Context, code string) error {
 	s.t.Uncancel()
 	// Thread.SetLocal is documented as setup-only. Dyson deliberately updates
 	// this local between sequential REPL chunks, while no Starlark code is
 	// running, so blocking builtins can receive the context for this Eval.
 	xctx.WithContext(s.t, ctx)
-	// Closing finished after Eval returns lets the watcher exit without
-	// interrupting a normally completed evaluation.
-	finished := make(chan struct{})
-	defer close(finished)
-	go func() {
-		select {
-		case <-ctx.Done():
-			// Cancel interrupts interpreted Starlark; it is not resource cleanup
-			// and cannot stop a blocking host builtin. Builtins receive ctx above
-			// and must honor it themselves.
-			s.t.Cancel(context.Cause(ctx).Error())
-		case <-finished:
+	cancelDone := make(chan struct{})
+	stopCancel := context.AfterFunc(ctx, func() {
+		defer close(cancelDone)
+		// Cancel interrupts interpreted Starlark; it is not resource cleanup
+		// and cannot stop a blocking host builtin. Builtins receive ctx above
+		// and must honor it themselves.
+		s.t.Cancel(context.Cause(ctx).Error())
+	})
+	defer func() {
+		// stopCancel does not wait when the callback has already started. Join it
+		// so this call's cancellation cannot reach a later Eval.
+		if !stopCancel() {
+			<-cancelDone
 		}
 	}()
 
