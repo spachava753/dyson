@@ -33,6 +33,12 @@ type MutFS interface {
 	Readlink(name string) (string, error)
 }
 
+// RemoveTreeFS optionally provides recursive deletion that never follows
+// symbolic links encountered below name.
+type RemoveTreeFS interface {
+	RemoveTree(name string) error
+}
+
 // File is a file handle used by descriptor-style Starlark operations.
 type File interface {
 	io.Reader
@@ -137,6 +143,12 @@ func (f HostFS) Mkdir(name string, perm fs.FileMode) error {
 // Remove removes a host path.
 func (f HostFS) Remove(name string) error {
 	return os.Remove(f.resolve(name))
+}
+
+// RemoveTree recursively removes name. os.RemoveAll performs descriptor-relative
+// traversal on supported host platforms and refuses to open symlinks as directories.
+func (f HostFS) RemoveTree(name string) error {
+	return os.RemoveAll(f.resolve(name))
 }
 
 // Rename renames a host path.

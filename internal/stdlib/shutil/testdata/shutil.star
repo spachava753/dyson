@@ -1,24 +1,26 @@
 # Tests for Dyson's Python-like shutil compatibility module.
 #
-# These chunks cover source-backed orchestration over the injected os module and
-# host-facing primitives that use xfs/xos capabilities from the Go harness.
+# These chunks cover Go builtin orchestration over the injected os module and
+# host-facing xfs/xos capabilities from the Go harness.
 
 ---
-# The module exposes implemented shutil functions as Starlark functions or host builtins.
+# The module exposes each implemented shutil function directly as a host builtin.
 load("assert.star", "assert")
 load("shutil.star", "shutil")
 
-assert.eq(type(shutil.copyfile), "function")
-assert.eq(type(shutil.copy), "function")
-assert.eq(type(shutil.copy2), "function")
-assert.eq(type(shutil.copytree), "function")
-assert.eq(type(shutil.rmtree), "function")
-assert.eq(type(shutil.move), "function")
-assert.eq(type(shutil.which), "function")
-assert.eq(type(shutil.disk_usage), "function")
-assert.eq(type(shutil.chown), "function")
-assert.eq(type(shutil.get_terminal_size), "function")
-assert.eq(type(shutil.ignore_patterns), "function")
+assert.eq(type(shutil.copyfile), "builtin_function_or_method")
+assert.eq(type(shutil.copymode), "builtin_function_or_method")
+assert.eq(type(shutil.copystat), "builtin_function_or_method")
+assert.eq(type(shutil.copy), "builtin_function_or_method")
+assert.eq(type(shutil.copy2), "builtin_function_or_method")
+assert.eq(type(shutil.copytree), "builtin_function_or_method")
+assert.eq(type(shutil.rmtree), "builtin_function_or_method")
+assert.eq(type(shutil.move), "builtin_function_or_method")
+assert.eq(type(shutil.which), "builtin_function_or_method")
+assert.eq(type(shutil.disk_usage), "builtin_function_or_method")
+assert.eq(type(shutil.chown), "builtin_function_or_method")
+assert.eq(type(shutil.get_terminal_size), "builtin_function_or_method")
+assert.eq(type(shutil.ignore_patterns), "builtin_function_or_method")
 
 ---
 # copyfile, copy, and copy2 copy file contents through the injected xfs.OpenFS.
@@ -51,6 +53,21 @@ assert.eq(shutil.copytree("tree", "tree-copy", ignore=ignore), "tree-copy")
 assert.eq(os.path.isfile("tree-copy/a.txt"), True)
 assert.eq(os.path.isfile("tree-copy/sub/b.txt"), True)
 assert.eq(os.path.exists("tree-copy/skip.tmp"), False)
+
+---
+# copytree invokes an explicitly supplied Starlark copy callback for each file.
+load("assert.star", "assert")
+load("os.star", "os")
+load("shutil.star", "shutil")
+
+copied = []
+def custom_copy(src, dst):
+    copied.append((src, dst))
+    return shutil.copyfile(src, dst)
+
+assert.eq(shutil.copytree("tree", "tree-callback-copy", copy_function=custom_copy), "tree-callback-copy")
+assert.eq(len(copied), 3)
+assert.eq(os.path.isfile("tree-callback-copy/sub/b.txt"), True)
 
 ---
 # rmtree removes nested directory trees.

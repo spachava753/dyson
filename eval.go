@@ -3,6 +3,7 @@ package dyson
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/spachava753/dyson/internal/codec"
 	"github.com/spachava753/dyson/internal/xctx"
@@ -153,7 +154,11 @@ func (s *Sphere) Eval(ctx context.Context, code string) error {
 			Code: code,
 		})
 	}
-	return starlark.ExecREPLChunk(f, s.t, s.g)
+	err = starlark.ExecREPLChunk(f, s.t, s.g)
+	if s.recordingEnabled && err != nil {
+		s.log[len(s.log)-1].Error = err.Error()
+	}
+	return err
 }
 
 // Log returns the session's recorded chunks and host-call events in evaluation
@@ -170,23 +175,37 @@ func (s *Sphere) Log() []ReplChunk { return s.log }
 // Like Eval, Replay currently reserves ctx for the future executor layer because
 // starlark.ExecREPLChunk does not accept a context.
 func (s *Sphere) Replay(ctx context.Context, log []ReplChunk) error {
-	s.replaying = true
 	if len(s.log) != 0 {
 		return errors.New("log is not empty")
 	}
+	s.replaying = true
 	s.log = log
 	s.replayChunk = 0
 	s.replayStep = 0
 	defer func() {
 		s.replaying = false
 	}()
+	var firstExpectedError error
 	for _, replChunk := range log {
 		f, err := s.fopts.Parse("<dyson_sphere_repl>", replChunk.Code, 0)
 		if err != nil {
 			return err
 		}
-		if err := starlark.ExecREPLChunk(f, s.t, s.g); err != nil {
-			return err
+		execErr := starlark.ExecREPLChunk(f, s.t, s.g)
+		if replChunk.Error == "" {
+			if execErr != nil {
+				return execErr
+			}
+		} else {
+			if execErr == nil || execErr.Error() != replChunk.Error {
+				return fmt.Errorf("dyson: replay error differs: got %v, want %q", execErr, replChunk.Error)
+			}
+			if firstExpectedError == nil {
+				firstExpectedError = execErr
+			}
+		}
+		if s.replayStep != len(replChunk.Calls) {
+			return fmt.Errorf("dyson: replay consumed %d of %d recorded host calls", s.replayStep, len(replChunk.Calls))
 		}
 		s.replayStep = 0
 		s.replayChunk += 1
@@ -198,5 +217,5 @@ func (s *Sphere) Replay(ctx context.Context, log []ReplChunk) error {
 		s.log = nil
 	}
 
-	return nil
+	return firstExpectedError
 }

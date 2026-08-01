@@ -1,21 +1,14 @@
 package os
 
 import (
-	_ "embed"
-	"fmt"
-
 	"github.com/spachava753/dyson/internal/xfs"
 	"github.com/spachava753/dyson/internal/xos"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
-	"go.starlark.net/syntax"
 )
 
 // ModuleName is the Starlark stdlib module name for Dyson's os compatibility module.
 const ModuleName = "os"
-
-//go:embed os.star
-var source string
 
 // Module is the default Starlark module namespace exposed by load("os.star", "os").
 var Module = MakeModule(HostConfig("."))
@@ -56,42 +49,44 @@ func MakeModule(config ModuleConfig) *starlarkstruct.Module {
 	if config.FileDescriptors == nil {
 		config.FileDescriptors = xfs.NewFileDescriptors()
 	}
-	return loadModule(makePrimitiveModule(config), config.Platform)
-}
-
-func loadModule(primitives *starlarkstruct.Module, platform xos.Platform) *starlarkstruct.Module {
-	flags := platform.OpenFlags
-	globals, err := starlark.ExecFileOptions(
-		&syntax.FileOptions{While: true, Recursion: true},
-		&starlark.Thread{Name: ModuleName + ".star"},
-		ModuleName+".star",
-		source,
-		starlark.StringDict{
-			"module": starlark.NewBuiltin("module", starlarkstruct.MakeModule),
-			"_os":    primitives,
-
-			"os_name": starlark.String(platform.OSName),
-			"pathsep": starlark.String(platform.PathListSeparator),
-			"devnull": starlark.String(platform.DevNull),
-
-			"o_rdonly": starlark.MakeInt(flags.ReadOnly),
-			"o_wronly": starlark.MakeInt(flags.WriteOnly),
-			"o_rdwr":   starlark.MakeInt(flags.ReadWrite),
-			"o_append": starlark.MakeInt(flags.Append),
-			"o_creat":  starlark.MakeInt(flags.Create),
-			"o_excl":   starlark.MakeInt(flags.Exclusive),
-			"o_sync":   starlark.MakeInt(flags.Sync),
-			"o_trunc":  starlark.MakeInt(flags.Truncate),
-		},
-	)
-	if err != nil {
-		panic(fmt.Sprintf("load %s.star: %v", ModuleName, err))
+	primitives := makePrimitiveModule(config)
+	path := makePathModule(primitives)
+	flags := config.Platform.OpenFlags
+	members := make(starlark.StringDict, len(primitives.Members)+28)
+	for name, value := range primitives.Members {
+		if len(name) >= 5 && name[:5] == "path_" {
+			continue
+		}
+		members[name] = value
 	}
-
-	module, ok := globals[ModuleName].(*starlarkstruct.Module)
-	if !ok {
-		panic(fmt.Sprintf("load %s.star: global %q is %T", ModuleName, ModuleName, globals[ModuleName]))
-	}
+	members["path"] = path
+	members["name"] = starlark.String(config.Platform.OSName)
+	members["curdir"] = starlark.String(".")
+	members["pardir"] = starlark.String("..")
+	members["sep"] = starlark.String("/")
+	members["altsep"] = starlark.None
+	members["extsep"] = starlark.String(".")
+	members["pathsep"] = starlark.String(config.Platform.PathListSeparator)
+	members["linesep"] = starlark.String("\n")
+	members["defpath"] = starlark.String("/bin:/usr/bin")
+	members["devnull"] = starlark.String(config.Platform.DevNull)
+	members["F_OK"] = starlark.MakeInt(0)
+	members["R_OK"] = starlark.MakeInt(4)
+	members["W_OK"] = starlark.MakeInt(2)
+	members["X_OK"] = starlark.MakeInt(1)
+	members["O_RDONLY"] = starlark.MakeInt(flags.ReadOnly)
+	members["O_WRONLY"] = starlark.MakeInt(flags.WriteOnly)
+	members["O_RDWR"] = starlark.MakeInt(flags.ReadWrite)
+	members["O_APPEND"] = starlark.MakeInt(flags.Append)
+	members["O_CREAT"] = starlark.MakeInt(flags.Create)
+	members["O_EXCL"] = starlark.MakeInt(flags.Exclusive)
+	members["O_SYNC"] = starlark.MakeInt(flags.Sync)
+	members["O_TRUNC"] = starlark.MakeInt(flags.Truncate)
+	members["SEEK_SET"] = starlark.MakeInt(0)
+	members["SEEK_CUR"] = starlark.MakeInt(1)
+	members["SEEK_END"] = starlark.MakeInt(2)
+	module := &starlarkstruct.Module{Name: ModuleName, Members: members}
+	module.Freeze()
 	return module
 }
 

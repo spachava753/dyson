@@ -11,7 +11,7 @@ load("os.star", "os")
 assert.eq(type(os.listdir), "builtin_function_or_method")
 assert.eq(type(os.stat), "builtin_function_or_method")
 assert.eq(type(os.path), "module")
-assert.eq(type(os.path.join), "function")
+assert.eq(type(os.path.join), "builtin_function_or_method")
 assert.eq(type(os.path.isdir), "builtin_function_or_method")
 assert.eq(os.name in ("posix", "nt"), True)
 assert.eq(os.curdir, ".")
@@ -88,13 +88,14 @@ assert.eq(os.path.splitext("a/.profile"), ("a/.profile", ""))
 assert.eq(os.path.splitdrive("a/b"), ("", "a/b"))
 
 ---
-# Pure path joining and normalization are implemented in Starlark.
+# Pure path joining and normalization are exposed as Go builtins.
 load("assert.star", "assert")
 load("os.star", "os")
 
 assert.eq(os.path.isabs("/tmp"), True)
 assert.eq(os.path.isabs("tmp"), False)
 assert.eq(os.path.join("a", "b", "c"), "a/b/c")
+assert.eq(os.path.join(path="a"), "a")
 assert.eq(os.path.join("a", "/b", "c"), "/b/c")
 assert.eq(os.path.normpath("a//b/./c"), "a/b/c")
 assert.eq(os.path.normpath("a/b/../c"), "a/c")

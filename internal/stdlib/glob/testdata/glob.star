@@ -1,16 +1,16 @@
 # Tests for Dyson's Python-like glob compatibility module.
 #
 # Filesystem-backed glob expansion uses Dyson's narrow os/os.path primitives while
-# the matching and recursion logic stays in this Starlark module.
+# tests exercise the public module through Starlark.
 
 ---
-# The module exposes Python's public glob helpers as callable functions.
+# The module exposes Python's public glob helpers as callable builtins.
 load("assert.star", "assert")
 load("glob.star", "glob")
 
-assert.eq(type(glob.glob), "function")
-assert.eq(type(glob.iglob), "function")
-assert.eq(type(glob.escape), "function")
+assert.eq(type(glob.glob), "builtin_function_or_method")
+assert.eq(type(glob.iglob), "builtin_function_or_method")
+assert.eq(type(glob.escape), "builtin_function_or_method")
 
 ---
 # escape quotes glob metacharacters using Python's bracket escaping convention.

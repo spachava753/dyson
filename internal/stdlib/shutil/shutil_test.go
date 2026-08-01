@@ -2,8 +2,10 @@ package shutil
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nalgeon/be"
@@ -14,6 +16,26 @@ import (
 	"go.starlark.net/starlarktest"
 	"go.starlark.net/syntax"
 )
+
+type openFSWithoutIdentity struct {
+	host xfs.HostFS
+}
+
+func (f openFSWithoutIdentity) ReadDir(name string) ([]fs.DirEntry, error) {
+	return f.host.ReadDir(name)
+}
+
+func (f openFSWithoutIdentity) Stat(name string) (fs.FileInfo, error) {
+	return f.host.Stat(name)
+}
+
+func (f openFSWithoutIdentity) Lstat(name string) (fs.FileInfo, error) {
+	return f.host.Lstat(name)
+}
+
+func (f openFSWithoutIdentity) OpenFile(name string, flag int, perm fs.FileMode) (xfs.File, error) {
+	return f.host.OpenFile(name, flag, perm)
+}
 
 func TestShutilTestdata(t *testing.T) {
 	t.Setenv("COLUMNS", "120")
@@ -45,6 +67,44 @@ func TestShutilTestdata(t *testing.T) {
 			chunk.Done()
 		})
 	}
+}
+
+func TestRmtreeDoesNotFollowDirectorySymlinks(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeFile(t, outside, "keep.txt", "keep")
+	be.Err(t, os.Mkdir(filepath.Join(root, "tree"), 0o755), nil)
+	if err := os.Symlink(outside, filepath.Join(root, "tree", "outside")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	osModule := stdlibos.MakeModule(stdlibos.HostConfig(root))
+	module := MakeModule(HostConfig(root, osModule))
+	_, err := starlark.Call(newTestThread(t, osModule, module), module.Members["rmtree"], starlark.Tuple{starlark.String("tree")}, nil)
+	be.Err(t, err, nil)
+	_, err = os.Stat(filepath.Join(outside, "keep.txt"))
+	be.Err(t, err, nil)
+}
+
+func TestCopyfileFailsClosedWithoutSameFileCheck(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "source.txt", "keep")
+	host := xfs.HostFS{Root: root}
+	filesystem := openFSWithoutIdentity{host: host}
+	osConfig := stdlibos.HostConfig(root)
+	osConfig.FS = filesystem
+	osModule := stdlibos.MakeModule(osConfig)
+	config := HostConfig(root, osModule)
+	config.FS = filesystem
+	module := MakeModule(config)
+	_, err := starlark.Call(newTestThread(t, osModule, module), module.Members["copyfile"], starlark.Tuple{
+		starlark.String("source.txt"), starlark.String("source.txt"),
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "cannot check") {
+		t.Fatalf("copyfile error = %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(root, "source.txt"))
+	be.Err(t, err, nil)
+	be.Equal(t, string(content), "keep")
 }
 
 func writeFile(t *testing.T, root, name, content string) {

@@ -1,22 +1,15 @@
 package shutil
 
 import (
-	_ "embed"
-	"fmt"
-
 	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
 	"github.com/spachava753/dyson/internal/xfs"
 	"github.com/spachava753/dyson/internal/xos"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
-	"go.starlark.net/syntax"
 )
 
 // ModuleName is the Starlark stdlib module name for Dyson's shutil compatibility module.
 const ModuleName = "shutil"
-
-//go:embed shutil.star
-var source string
 
 // Module is the default Starlark module namespace exposed by load("shutil.star", "shutil").
 var Module = MakeModule(ModuleConfig{OS: stdlibos.Module})
@@ -44,30 +37,33 @@ func MakeModule(config ModuleConfig) *starlarkstruct.Module {
 	if config.Platform.OSName == "" {
 		config.Platform = xos.PortablePlatform
 	}
-	return loadModule(config.OS, makePrimitiveModule(config), config.Platform)
-}
-
-func loadModule(osModule, primitives *starlarkstruct.Module, platform xos.Platform) *starlarkstruct.Module {
-	globals, err := starlark.ExecFileOptions(
-		&syntax.FileOptions{While: true, Recursion: true},
-		&starlark.Thread{Name: ModuleName + ".star"},
-		ModuleName+".star",
-		source,
-		starlark.StringDict{
-			"module":       starlark.NewBuiltin("module", starlarkstruct.MakeModule),
-			"os":           osModule,
-			"_shutil":      primitives,
-			"pathsep":      starlark.String(platform.PathListSeparator),
-			"default_path": starlark.String("/bin:/usr/bin"),
+	implementation := moduleFunctions{
+		os: config.OS,
+		primitives: primitives{
+			fsys:     config.FS,
+			env:      config.Env,
+			terminal: config.Terminal,
+			platform: config.Platform,
 		},
-	)
-	if err != nil {
-		panic(fmt.Sprintf("load %s.star: %v", ModuleName, err))
 	}
-
-	module, ok := globals[ModuleName].(*starlarkstruct.Module)
-	if !ok {
-		panic(fmt.Sprintf("load %s.star: global %q is %T", ModuleName, ModuleName, globals[ModuleName]))
+	module := &starlarkstruct.Module{
+		Name: ModuleName,
+		Members: starlark.StringDict{
+			"copyfile":          starlark.NewBuiltin(ModuleName+".copyfile", implementation.copyfile),
+			"copymode":          starlark.NewBuiltin(ModuleName+".copymode", implementation.copymode),
+			"copystat":          starlark.NewBuiltin(ModuleName+".copystat", implementation.copystat),
+			"copy":              starlark.NewBuiltin(ModuleName+".copy", implementation.copy),
+			"copy2":             starlark.NewBuiltin(ModuleName+".copy2", implementation.copy2),
+			"copytree":          starlark.NewBuiltin(ModuleName+".copytree", implementation.copytree),
+			"rmtree":            starlark.NewBuiltin(ModuleName+".rmtree", implementation.rmtree),
+			"move":              starlark.NewBuiltin(ModuleName+".move", implementation.move),
+			"disk_usage":        starlark.NewBuiltin(ModuleName+".disk_usage", implementation.diskUsage),
+			"chown":             starlark.NewBuiltin(ModuleName+".chown", implementation.chown),
+			"get_terminal_size": starlark.NewBuiltin(ModuleName+".get_terminal_size", implementation.getTerminalSize),
+			"which":             starlark.NewBuiltin(ModuleName+".which", implementation.which),
+			"ignore_patterns":   starlark.NewBuiltin(ModuleName+".ignore_patterns", implementation.ignorePatterns),
+		},
 	}
+	module.Freeze()
 	return module
 }

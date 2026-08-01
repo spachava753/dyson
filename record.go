@@ -1,6 +1,10 @@
 package dyson
 
 import (
+	"errors"
+	"fmt"
+	"reflect"
+
 	"github.com/spachava753/dyson/internal/codec"
 	"go.starlark.net/starlark"
 )
@@ -13,7 +17,14 @@ type HostCall struct {
 	Args     codec.SerializedVal
 	Kwargs   []codec.SerializedVal
 	Response codec.SerializedVal
-	Err      any
+	Err      *HostCallError
+}
+
+// HostCallError is the durable form of a builtin error. Starlark has no
+// exception types, so replay preserves the visible message without maintaining
+// a second Go error type system.
+type HostCallError struct {
+	Message string
 }
 
 // ReplChunk records one submitted REPL chunk and the host calls it produced.
@@ -22,6 +33,7 @@ type HostCall struct {
 type ReplChunk struct {
 	Code  string
 	Calls []HostCall
+	Error string
 }
 
 // DurableBuiltin wraps a Starlark builtin so Dyson can record every host call.
@@ -50,7 +62,7 @@ func (s *Sphere) record(
 		Args:     args,
 		Kwargs:   kwargs,
 		Response: resp,
-		Err:      respErr,
+		Err:      hostCallError(respErr),
 	})
 	s.log[len(s.log)-1] = currChunk
 }
@@ -63,11 +75,25 @@ func (s *Sphere) record(
 // TODO: do we need to override [starlark.Builtin.BindReceiver] too?
 func (d *DurableBuiltin) CallInternal(thread *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if d.s.replaying {
+		serializedArgs, serializedKwargs, err := d.s.serializeCallInputs(args, kwargs)
+		if err != nil {
+			return nil, err
+		}
+		if d.s.replayChunk >= len(d.s.log) || d.s.replayStep >= len(d.s.log[d.s.replayChunk].Calls) {
+			return nil, fmt.Errorf("dyson: replay has no host call for %s", d.Builtin.Name())
+		}
 		capturedCall := d.s.log[d.s.replayChunk].Calls[d.s.replayStep]
 		d.s.replayStep++
-		// TODO: verify hash of input is the same
-		// TODO: maybe if we know that this builtin called callbacks before, we can re-execute? We would need to store the fact that this called a call back before
-		return d.s.codecs[capturedCall.Response.Type].Restore(capturedCall.Response)
+		if capturedCall.FnName != d.Builtin.Name() {
+			return nil, fmt.Errorf("dyson: replay expected %s, got %s", capturedCall.FnName, d.Builtin.Name())
+		}
+		if !reflect.DeepEqual(capturedCall.Args, serializedArgs) || !reflect.DeepEqual(capturedCall.Kwargs, serializedKwargs) {
+			return nil, fmt.Errorf("dyson: replay inputs for %s differ from the recorded call", d.Builtin.Name())
+		}
+		if capturedCall.Err != nil {
+			return nil, errors.New(capturedCall.Err.Message)
+		}
+		return d.s.codecs.Restore(capturedCall.Response)
 	}
 	if !d.s.recordingEnabled {
 		return d.Builtin.CallInternal(thread, args, kwargs)
@@ -80,14 +106,22 @@ func (d *DurableBuiltin) CallInternal(thread *starlark.Thread, args starlark.Tup
 
 	resp, respErr := d.Builtin.CallInternal(thread, args, kwargs)
 	var serializedResp codec.SerializedVal
-	if resp != nil {
+	if respErr == nil && resp != nil {
 		serializedResp, err = d.s.codecs.Serialize(resp)
 		if err != nil {
+			d.s.record(d.Builtin.Name(), serializedArgs, serializedKwargs, codec.SerializedVal{}, err)
 			return nil, err
 		}
 	}
 	d.s.record(d.Builtin.Name(), serializedArgs, serializedKwargs, serializedResp, respErr)
 	return resp, respErr
+}
+
+func hostCallError(err error) *HostCallError {
+	if err == nil {
+		return nil
+	}
+	return &HostCallError{Message: err.Error()}
 }
 
 // serializeCallInputs validates and serializes inputs before the real host

@@ -9,6 +9,7 @@ import (
 	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
 	stdlibpwd "github.com/spachava753/dyson/internal/stdlib/pwd"
 	stdlibre "github.com/spachava753/dyson/internal/stdlib/re"
+	stdlibrequests "github.com/spachava753/dyson/internal/stdlib/requests"
 	stdlibshutil "github.com/spachava753/dyson/internal/stdlib/shutil"
 	stdlibsignal "github.com/spachava753/dyson/internal/stdlib/signal"
 	stdlibsubprocess "github.com/spachava753/dyson/internal/stdlib/subprocess"
@@ -79,6 +80,9 @@ func StdlibModules(config StdlibConfig) map[string]starlark.StringDict {
 		},
 		stdlibre.ModuleName + ".star": {
 			stdlibre.ModuleName: stdlibre.Module,
+		},
+		stdlibrequests.ModuleName + ".star": {
+			stdlibrequests.ModuleName: stdlibrequests.MakeModule(config.HTTPClient),
 		},
 		stdlibshutil.ModuleName + ".star": {
 			stdlibshutil.ModuleName: shutilModule,

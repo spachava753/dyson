@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/xhttp"
 	"github.com/spachava753/dyson/internal/xos"
 )
 
@@ -74,6 +75,18 @@ type CommandResult = xos.CommandResult
 // cancellation. See Command.Dir for HostStdlibConfig's default-directory rule.
 type CommandRunner = xos.CommandRunner
 
+// HTTPRequest is the normalized request passed to an HTTPClient.
+type HTTPRequest = xhttp.Request
+
+// HTTPResponse is the fully buffered response returned by an HTTPClient.
+type HTTPResponse = xhttp.Response
+
+// HTTPBodyLimitError reports that a buffered response exceeded the host limit.
+type HTTPBodyLimitError = xhttp.BodyLimitError
+
+// HTTPClient performs buffered HTTP requests and must honor context cancellation.
+type HTTPClient = xhttp.Client
+
 // StdlibConfig declares the host capabilities shared by standard-library
 // modules. Except for Platform's portable constants, nil or zero capabilities
 // remain unavailable rather than falling back to ambient host access.
@@ -104,6 +117,10 @@ type StdlibConfig struct {
 	// keeps both modules fail-closed. For configs returned by HostStdlibConfig,
 	// commands with an empty Dir are passed to the runner with Dir set to root.
 	CommandRunner CommandRunner
+
+	// HTTPClient supplies requests.request network access. Nil keeps the requests
+	// module loadable but fail-closed.
+	HTTPClient HTTPClient
 
 	// Clock supplies current time and sleeping to time, plus implicit timestamps
 	// such as os.utime(path). Nil keeps those operations fail-closed.
@@ -139,9 +156,9 @@ func (c StdlibConfig) configuredCommandRunner() CommandRunner {
 // environment, process identity and signaling, working directory, terminal,
 // platform constants, and clock. root is only the base for relative filesystem
 // paths, not a containment boundary: absolute paths and parent traversal retain
-// normal host semantics. Command execution remains disabled unless a
-// CommandRunner is assigned explicitly; commands without an explicit working
-// directory then start in root.
+// normal host semantics. Command execution and HTTP access remain disabled
+// unless CommandRunner and HTTPClient are assigned explicitly; commands without
+// an explicit working directory then start in root.
 func HostStdlibConfig(root string) StdlibConfig {
 	host := xos.Host{}
 	return StdlibConfig{
@@ -153,6 +170,13 @@ func HostStdlibConfig(root string) StdlibConfig {
 		Platform:         host.Platform(),
 		Clock:            host,
 	}
+}
+
+// HostHTTPClient returns a client that may make arbitrary HTTP requests with
+// the current user's network authority. Assign it only when the evaluated
+// Starlark code is trusted to access the network.
+func HostHTTPClient() HTTPClient {
+	return xhttp.HostClient{}
 }
 
 // HostCommandRunner returns a runner that may execute arbitrary commands on the

@@ -315,12 +315,8 @@ explode(1)
 		be.Equal(t, call.Args, tupleVal(starlark.MakeInt(1)))
 		be.Equal(t, call.Kwargs, []codec.SerializedVal{})
 		be.Equal(t, call.Response, codec.SerializedVal{})
-		callErr, ok := call.Err.(error)
-		if !ok {
-			t.Fatalf("recorded error has type %T, want error", call.Err)
-		}
-		if !strings.Contains(callErr.Error(), "boom") {
-			t.Fatalf("recorded error %q does not contain boom", callErr.Error())
+		if call.Err == nil || !strings.Contains(call.Err.Message, "boom") {
+			t.Fatalf("recorded error %#v does not contain boom", call.Err)
 		}
 	})
 
@@ -330,11 +326,9 @@ explode(1)
 		delete(registry, starlark.String("").Type())
 		m, err := starlarktest.LoadAssertModule()
 		be.Err(t, err, nil)
-		s := NewSphere(func(thread *starlark.Thread, msg string) {
-			t.Log(msg)
-		}, map[string]starlark.StringDict{
+		modules := map[string]starlark.StringDict{
 			"assert.star": m,
-			"custom.star": starlark.StringDict{
+			"custom.star": {
 				"effect": starlark.NewBuiltin("effect", func(
 					thread *starlark.Thread,
 					fn *starlark.Builtin,
@@ -345,7 +339,10 @@ explode(1)
 					return starlark.None, nil
 				}),
 			},
-		}, nil, registry, true)
+		}
+		s := NewSphere(func(thread *starlark.Thread, msg string) {
+			t.Log(msg)
+		}, modules, nil, registry, true)
 		err = s.Eval(t.Context(), `
 load("custom.star", "effect")
 effect("unsupported")
@@ -359,5 +356,12 @@ effect("unsupported")
 		be.Equal(t, called, false)
 		be.Equal(t, len(s.log), 1)
 		be.Equal(t, len(s.log[0].Calls), 0)
+
+		replayed := NewSphere(nil, modules, nil, registry, true)
+		replayErr := replayed.Replay(t.Context(), s.Log())
+		if replayErr == nil || replayErr.Error() != err.Error() {
+			t.Fatalf("Replay() error = %v, want %v", replayErr, err)
+		}
+		be.Equal(t, called, false)
 	})
 }
