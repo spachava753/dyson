@@ -1,11 +1,9 @@
 package time
 
 import (
-	"encoding/binary"
 	"fmt"
 	gotime "time"
 
-	"github.com/spachava753/dyson/internal/codec"
 	"go.starlark.net/starlark"
 )
 
@@ -19,45 +17,7 @@ type structTimeValue struct {
 	structTime
 }
 
-const (
-	structTimeTypeName   = "struct_time"
-	structTimeCodecBytes = 9 * 8
-)
-
-// RegisterStructTimeCodec installs durable serialization support for
-// time.struct_time values into a codec registry.
-func RegisterStructTimeCodec(registry codec.Registry) {
-	registry[structTimeTypeName] = codec.ValueCodec{
-		Type:    structTimeTypeName,
-		Version: 1,
-		Serialize: func(val starlark.Value) (codec.SerializedVal, error) {
-			v, ok := val.(*structTimeValue)
-			if !ok {
-				return codec.SerializedVal{}, fmt.Errorf("dyson: got %T for struct_time codec", val)
-			}
-			data := make([]byte, structTimeCodecBytes)
-			for i, field := range v.values {
-				binary.BigEndian.PutUint64(data[i*8:], uint64(int64(field)))
-			}
-			hash, _ := v.Hash()
-			return codec.SerializedVal{Type: structTimeTypeName, Hash: hash, Data: data}, nil
-		},
-		Restore: func(val codec.SerializedVal) (starlark.Value, error) {
-			if len(val.Data) != structTimeCodecBytes {
-				return nil, fmt.Errorf("dyson: invalid struct_time payload length %d", len(val.Data))
-			}
-			var values [9]int
-			for i := range values {
-				field := int64(binary.BigEndian.Uint64(val.Data[i*8:]))
-				if int64(int(field)) != field {
-					return nil, fmt.Errorf("dyson: struct_time field %d is out of range", i)
-				}
-				values[i] = int(field)
-			}
-			return &structTimeValue{structTime: structTime{values: values}}, nil
-		},
-	}
-}
+const structTimeTypeName = "struct_time"
 
 // newStructTime converts a Go time to the Starlark-visible struct_time value.
 func newStructTime(t gotime.Time) starlark.Value {

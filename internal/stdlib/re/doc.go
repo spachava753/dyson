@@ -61,8 +61,4 @@
 // exception semantics, and the useful runtime values are returned directly from
 // compile and matching functions. Compile and match failures are reported as Go
 // errors surfaced to Starlark execution rather than as Python exception objects.
-//
-// Compiled Pattern and Match values are durable Dyson values: both implement the
-// snapshot converter/restorer hooks so they can round-trip through the root
-// snapshot encoder and decoder when stored in user globals.
 package re

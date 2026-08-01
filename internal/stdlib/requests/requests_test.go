@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/nalgeon/be"
-	"github.com/spachava753/dyson/internal/codec"
 	"github.com/spachava753/dyson/internal/xhttp"
 	"go.starlark.net/starlark"
 )
@@ -89,31 +88,6 @@ func TestResponseTextEncoding(t *testing.T) {
 			be.Err(t, err, nil)
 			be.Equal(t, string(text.(starlark.String)), test.text)
 		})
-	}
-}
-
-func TestResponseCodecStoresFlatHistory(t *testing.T) {
-	history := make([]xhttp.Response, 30)
-	for i := range history {
-		history[i] = xhttp.Response{StatusCode: 300 + i%9, Header: http.Header{}, URL: "https://example.test/redirect", Reason: "Redirect"}
-	}
-	response := newResponseValue(xhttp.Response{StatusCode: 200, Header: http.Header{}, History: history})
-	registry := codec.DefaultRegistry()
-	RegisterCodecs(registry)
-	serialized, err := registry.Serialize(response)
-	be.Err(t, err, nil)
-	be.Equal(t, len(serialized.List), 31)
-	for _, snapshot := range serialized.List {
-		be.Equal(t, snapshot.Type, "tuple")
-		be.Equal(t, len(snapshot.List), 6)
-	}
-
-	restored, err := registry.Restore(serialized)
-	be.Err(t, err, nil)
-	replayed := restored.(*responseValue)
-	be.Equal(t, replayed.history.Len(), 30)
-	for i := range replayed.history.Len() {
-		be.Equal(t, replayed.history.Index(i).(*responseValue).history.Len(), i)
 	}
 }
 

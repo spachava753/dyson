@@ -85,7 +85,7 @@ func TestStdlibModulesUsesConfiguredFileSystemAndEnvironment(t *testing.T) {
 	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
 		FS:  fsys,
 		Env: env,
-	}), nil, nil, false)
+	}), nil)
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("os.star", "os")
@@ -153,7 +153,7 @@ func TestStdlibModulesUsesConfiguredOSCapabilities(t *testing.T) {
 			PathListSeparator: ":",
 			DevNull:           "/dev/null",
 		},
-	}), nil, nil, false)
+	}), nil)
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("os.star", "os")
@@ -199,7 +199,7 @@ func TestStdlibModulesUsesConfiguredClockForUtime(t *testing.T) {
 	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
 		FS:    fsys,
 		Clock: clock,
-	}), nil, nil, false)
+	}), nil)
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("os.star", "os")
@@ -215,7 +215,7 @@ func TestStdlibModulesUsesConfiguredClock(t *testing.T) {
 	ctx := t.Context()
 	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
 		Clock: clock,
-	}), nil, nil, false)
+	}), nil)
 
 	be.Err(t, sphere.Eval(ctx, `
 load("time.star", "time")
@@ -243,7 +243,7 @@ func TestHostCommandRunnerIsExplicitOptIn(t *testing.T) {
 		t.Fatal("HostStdlibConfig unexpectedly enables command execution")
 	}
 	config.CommandRunner = dyson.HostCommandRunner()
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(config), nil, nil, false)
+	sphere := dyson.NewSphere(nil, dyson.StdlibModules(config), nil)
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("subprocess.star", "subprocess")
@@ -258,7 +258,7 @@ func TestHostStdlibConfigUsesRootAsDefaultCommandDirectory(t *testing.T) {
 	runner := &recordingCommandRunner{}
 	config := dyson.HostStdlibConfig(root)
 	config.CommandRunner = runner
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(config), nil, nil, false)
+	sphere := dyson.NewSphere(nil, dyson.StdlibModules(config), nil)
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("subprocess.star", "subprocess")
@@ -279,7 +279,7 @@ os.system("tool")
 }
 
 func TestStdlibModulesWithoutClockFailsClosed(t *testing.T) {
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{}), nil, nil, false)
+	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{}), nil)
 
 	err := sphere.Eval(t.Context(), `
 load("time.star", "time")
@@ -293,7 +293,7 @@ time.time()
 func TestHostStdlibConfigSharesFileSystemState(t *testing.T) {
 	root := t.TempDir()
 	be.Err(t, os.WriteFile(filepath.Join(root, "source.txt"), []byte("source"), 0o600), nil)
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.HostStdlibConfig(root)), nil, nil, false)
+	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.HostStdlibConfig(root)), nil)
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("glob.star", "glob")
@@ -317,7 +317,7 @@ if content != b"shared":
 }
 
 func TestStdlibModulesWithoutFileSystemFailsClosed(t *testing.T) {
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{}), nil, nil, false)
+	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{}), nil)
 
 	err := sphere.Eval(t.Context(), `
 load("os.star", "os")
@@ -329,7 +329,7 @@ os.listdir(".")
 }
 
 func TestStdlibModulesWithoutCommandRunnerFailsClosed(t *testing.T) {
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{}), nil, nil, false)
+	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{}), nil)
 
 	err := sphere.Eval(t.Context(), `
 load("subprocess.star", "subprocess")
@@ -354,7 +354,7 @@ func TestEvalCancellationStopsConfiguredCommand(t *testing.T) {
 	runner := blockingCommandRunner{started: make(chan struct{})}
 	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
 		CommandRunner: runner,
-	}), nil, nil, false)
+	}), nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	result := make(chan error, 1)
 	go func() {
@@ -381,7 +381,7 @@ func TestStdlibModulesUsesConfiguredCommandRunner(t *testing.T) {
 	ctx := t.Context()
 	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
 		CommandRunner: runner,
-	}), nil, nil, false)
+	}), nil)
 
 	be.Err(t, sphere.Eval(ctx, `
 load("subprocess.star", "subprocess")

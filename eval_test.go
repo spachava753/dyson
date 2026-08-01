@@ -2,22 +2,16 @@ package dyson
 
 import (
 	"context"
-	"fmt"
-	"io/fs"
-	"path/filepath"
 	"strings"
 	"testing"
 	"testing/synctest"
 
 	"github.com/nalgeon/be"
-	"github.com/spachava753/dyson/internal/chunkedfile"
-	"go.starlark.net/lib/math"
 	"go.starlark.net/starlark"
-	"go.starlark.net/starlarktest"
 )
 
 func TestEvalStopsWhenContextEnds(t *testing.T) {
-	s := NewSphere(nil, nil, nil, DefaultCodecRegistry(), false)
+	s := NewSphere(nil, nil, nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
@@ -49,7 +43,7 @@ func TestEvalCancellationCannotOutliveCall(t *testing.T) {
 		s := NewSphere(func(_ *starlark.Thread, _ string) {
 			close(printStarted)
 			<-releasePrint
-		}, nil, nil, DefaultCodecRegistry(), false)
+		}, nil, nil)
 		cause := &delayedCancellation{
 			started: make(chan struct{}),
 			release: make(chan struct{}),
@@ -95,7 +89,7 @@ func TestNewSphereAcceptsInitialGlobals(t *testing.T) {
 			return starlark.MakeInt(value * 2), nil
 		}),
 	}
-	s := NewSphere(nil, nil, initialGlobals, DefaultCodecRegistry(), false)
+	s := NewSphere(nil, nil, initialGlobals)
 
 	be.Err(t, s.Eval(t.Context(), `
 if double(answer) != 42:
@@ -103,62 +97,19 @@ if double(answer) != 42:
 `), nil)
 }
 
-func TestEvalTestdata(t *testing.T) {
-	err := filepath.WalkDir("testdata", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".star") {
-			return nil
-		}
-		t.Run(d.Name(), func(t *testing.T) {
-			chunks := chunkedfile.Read(path, t)
-			var sb strings.Builder
-			m, err := starlarktest.LoadAssertModule()
-			be.Err(t, err, nil)
-			registry := DefaultCodecRegistry()
-			mods := StdlibModules(HostStdlibConfig("."))
-			mods[math.Module.Name+".star"] = starlark.StringDict{
-				"math": math.Module,
-			}
-			s := NewSphere(func(thread *starlark.Thread, msg string) {
-				fmt.Fprintln(&sb, msg)
-			}, mods, nil, registry, true)
-			lastIdx := len(chunks) - 1
+func TestEvalPreservesGlobalsAndLoadedModules(t *testing.T) {
+	modules := map[string]starlark.StringDict{
+		"answer.star": {"answer": starlark.MakeInt(21)},
+	}
+	s := NewSphere(nil, modules, nil)
 
-			// run the simulated repl chunks
-			for i := range lastIdx {
-				err = s.Eval(t.Context(), chunks[i].Source)
-				if err != nil {
-					chunks[i].GotErrorAnyLine(err.Error())
-				}
-				chunks[i].Done()
-			}
-
-			// get the log
-			log := s.Log()
-
-			mods["assert.star"] = m
-
-			// run the last chunk after replaying, which will be assertions
-			s = NewSphere(func(thread *starlark.Thread, msg string) {
-				fmt.Fprintln(&sb, msg)
-			}, mods, nil, registry, true)
-			starlarktest.SetReporter(s.t, t)
-			// Replay may encounter the same intentional Starlark failures as setup chunks.
-			_ = s.Replay(t.Context(), log)
-
-			err = s.Eval(t.Context(), chunks[lastIdx].Source)
-			if err != nil {
-				chunks[lastIdx].GotErrorAnyLine(err.Error())
-			}
-			chunks[lastIdx].Done()
-		})
-
-		return nil
-	})
-	be.Err(t, err, nil)
+	be.Err(t, s.Eval(t.Context(), `
+load("answer.star", "answer")
+def double(value):
+    return value * 2
+`), nil)
+	be.Err(t, s.Eval(t.Context(), `
+if double(answer) != 42:
+    fail("session globals were not preserved")
+`), nil)
 }

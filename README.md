@@ -8,7 +8,7 @@
 
 ```go
 modules := dyson.StdlibModules(dyson.StdlibConfig{})
-sphere := dyson.NewSphere(print, modules, initialGlobals, nil, false)
+sphere := dyson.NewSphere(print, modules, initialGlobals)
 ```
 
 The modules remain loadable, but operations that need a missing capability return module-qualified errors. In particular, `subprocess.run` and `os.system` never fall back to host command execution.
@@ -33,7 +33,7 @@ The public interfaces use standard Go types where possible. `CommandRunner` rece
 ```go
 config := dyson.HostStdlibConfig(cwd)
 modules := dyson.StdlibModules(config)
-sphere := dyson.NewSphere(print, modules, initialGlobals, nil, false)
+sphere := dyson.NewSphere(print, modules, initialGlobals)
 ```
 
 `root` is a base for relative paths, not a sandbox boundary. Absolute paths and `..` retain normal host semantics. When command execution is enabled, commands that omit `cwd` also start in `root`. The host configuration can mutate environment variables, change the process working directory and umask, and signal processes, so use it only for trusted code or behind an appropriate policy layer.
@@ -45,7 +45,7 @@ config := dyson.HostStdlibConfig(cwd)
 config.CommandRunner = dyson.HostCommandRunner() // Grants arbitrary host command execution.
 config.HTTPClient = dyson.HostHTTPClient()       // Grants arbitrary host HTTP access.
 modules := dyson.StdlibModules(config)
-sphere := dyson.NewSphere(print, modules, initialGlobals, nil, false)
+sphere := dyson.NewSphere(print, modules, initialGlobals)
 ```
 
 `HostCommandRunner` uses context-aware host commands, and `HostHTTPClient` attaches the evaluation context to each request. Canceling `Sphere.Eval` can therefore terminate either active operation.
@@ -86,10 +86,6 @@ Response headers are an ordinary Starlark dictionary whose keys are normalized t
 
 Multipart `files`, proxies, hooks, streaming, custom TLS verification, and client certificates are accepted by the call surface but fail explicitly rather than being ignored. Response bodies are fully buffered, with a 64 MiB limit in `HostHTTPClient`, and redirect history is ordered oldest to newest.
 
-Successful HTTP calls and transport failures cross Dyson's normal durable builtin boundary, so replay returns the recorded response or error without repeating the network effect. Starlark has no exception types, so durable errors preserve their visible message rather than reconstructing a Go error type.
-
 One `StdlibModules` call shares the configured filesystem and environment across related modules. It also creates one internal file-descriptor table shared by `os` and `tempfile`, so a descriptor returned by `tempfile.mkstemp` can be consumed by `os.read`, `os.write`, and `os.close`.
-
-`os`, `glob`, `shutil`, and `requests` export Go-backed Starlark builtins. A `Sphere` wraps those builtins uniformly for record/replay; the modules do not instantiate a second layer of Starlark functions around host operations.
 
 `pwd` and `grp` are currently catalog-only modules and do not perform user or group lookup, so there is no lookup capability yet.

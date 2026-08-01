@@ -104,7 +104,7 @@ assert.eq(shutil.which("missing", path="bin"), None)
 assert.eq(shutil.get_terminal_size(), (120, 40))
 
 ---
-# disk_usage returns a plain durable tuple of capacity numbers.
+# disk_usage returns a plain tuple of capacity numbers.
 load("assert.star", "assert")
 load("shutil.star", "shutil")
 

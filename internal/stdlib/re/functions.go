@@ -302,8 +302,7 @@ func compileOrUsePattern(fn string, expr starlark.Value, flags starlark.Int) (*p
 }
 
 // newPattern validates Starlark pattern and flag values, compiles them with the
-// package's RE2-backed compiler, and packages the resulting metadata into a
-// durable Pattern value.
+// package's RE2-backed compiler, and returns a Pattern value.
 func newPattern(fn string, expr starlark.Value, flagsValue starlark.Int) (*patternValue, error) {
 	text, err := regexTextFromValue(fn, "pattern", expr)
 	if err != nil {

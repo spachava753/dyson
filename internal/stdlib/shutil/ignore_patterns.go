@@ -6,16 +6,7 @@ import (
 	"go.starlark.net/starlark"
 )
 
-const (
-	ignorePatternTypeName = "shutil.IgnorePattern"
-	ignorePatternFuncName = ModuleName + ".ignore_patterns.<locals>._ignore"
-)
-
-// ignorePatternValue keeps ignore_patterns durable without trying to serialize
-// an arbitrary Starlark closure.
-type ignorePatternValue struct {
-	patterns []string
-}
+const ignorePatternFuncName = ModuleName + ".ignore_patterns.<locals>._ignore"
 
 func (m moduleFunctions) ignorePatterns(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(kwargs) != 0 {
@@ -29,42 +20,32 @@ func (m moduleFunctions) ignorePatterns(_ *starlark.Thread, fn *starlark.Builtin
 		}
 		patterns[i] = pattern
 	}
-	return &ignorePatternValue{patterns: patterns}, nil
-}
 
-func (v *ignorePatternValue) String() string       { return "<function " + ignorePatternFuncName + ">" }
-func (v *ignorePatternValue) Type() string         { return ignorePatternTypeName }
-func (v *ignorePatternValue) Freeze()              {}
-func (v *ignorePatternValue) Truth() starlark.Bool { return starlark.True }
-func (v *ignorePatternValue) Hash() (uint32, error) {
-	return starlark.String(ignorePatternFuncName).Hash()
-}
-func (v *ignorePatternValue) Name() string { return ignorePatternFuncName }
-
-func (v *ignorePatternValue) CallInternal(_ *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var path starlark.Value
-	var names starlark.Iterable
-	if err := starlark.UnpackArgs(ignorePatternFuncName, args, kwargs, "path", &path, "names", &names); err != nil {
-		return nil, err
-	}
-	_ = path
-	var ignored []starlark.Value
-	iterator := names.Iterate()
-	defer iterator.Done()
-	var value starlark.Value
-	for iterator.Next(&value) {
-		name, ok := starlark.AsString(value)
-		if !ok {
-			return nil, fmt.Errorf("%s: name must be a string", ignorePatternFuncName)
+	return starlark.NewBuiltin(ignorePatternFuncName, func(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+		var path starlark.Value
+		var names starlark.Iterable
+		if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "path", &path, "names", &names); err != nil {
+			return nil, err
 		}
-		for _, pattern := range v.patterns {
-			if matchGlob(name, pattern) {
-				ignored = append(ignored, value)
-				break
+		_ = path
+		var ignored []starlark.Value
+		iterator := names.Iterate()
+		defer iterator.Done()
+		var value starlark.Value
+		for iterator.Next(&value) {
+			name, ok := starlark.AsString(value)
+			if !ok {
+				return nil, fmt.Errorf("%s: name must be a string", fn.Name())
+			}
+			for _, pattern := range patterns {
+				if matchGlob(name, pattern) {
+					ignored = append(ignored, value)
+					break
+				}
 			}
 		}
-	}
-	return starlark.NewList(ignored), nil
+		return starlark.NewList(ignored), nil
+	}), nil
 }
 
 func matchGlob(name, pattern string) bool {
@@ -91,5 +72,3 @@ func matchGlob(name, pattern string) bool {
 	}
 	return matched[len(pattern)]
 }
-
-var _ starlark.Callable = (*ignorePatternValue)(nil)
