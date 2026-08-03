@@ -14,6 +14,12 @@ type FileSystem = xfs.FS
 // MutableFileSystem optionally adds filesystem mutation operations.
 type MutableFileSystem = xfs.MutFS
 
+// ReadFile is the minimal handle required by Python-style file reading.
+type ReadFile = xfs.ReadFile
+
+// ReadFileSystem optionally adds read-only Python-style file access.
+type ReadFileSystem = xfs.ReadFS
+
 // File is a descriptor-style file handle.
 type File = xfs.File
 
@@ -54,7 +60,7 @@ type OpenFlags = xos.OpenFlags
 type Platform = xos.Platform
 
 // Command describes a subprocess request made by the Starlark standard library.
-// For a config returned by HostStdlibConfig, StdlibModules normalizes an empty
+// For a config returned by HostStdlibConfig, NewStdlib normalizes an empty
 // Dir to the configured filesystem root before invoking CommandRunner.
 type Command = xos.Command
 
@@ -62,10 +68,14 @@ type Command = xos.Command
 type StreamMode = xos.StreamMode
 
 const (
+	// StreamInherit leaves the stream connected to the parent process.
 	StreamInherit = xos.StreamInherit
-	StreamPipe    = xos.StreamPipe
+	// StreamPipe supplies stdin from Command.Input or captures output in CommandResult.
+	StreamPipe = xos.StreamPipe
+	// StreamDiscard connects the stream to the operating system's null device.
 	StreamDiscard = xos.StreamDiscard
-	StreamStdout  = xos.StreamStdout
+	// StreamStdout redirects stderr to the command's stdout destination.
+	StreamStdout = xos.StreamStdout
 )
 
 // CommandResult is the completed result of a subprocess execution.
@@ -92,8 +102,8 @@ type HTTPClient = xhttp.Client
 // remain unavailable rather than falling back to ambient host access.
 type StdlibConfig struct {
 	// FS is shared by os, glob, shutil, and tempfile. The concrete filesystem
-	// owns path resolution and containment; optional interfaces add mutation,
-	// descriptor I/O, canonical paths, identity, and disk usage.
+	// owns path resolution and containment; optional interfaces add read-only
+	// files, mutation, descriptor I/O, canonical paths, identity, and disk usage.
 	FS FileSystem
 
 	// Env is shared by os, shutil, and tempfile. Nil disables environment access.
@@ -132,6 +142,7 @@ type defaultDirectoryCommandRunner struct {
 	dir    string
 }
 
+// RunCommand applies the configured default directory before delegating the command.
 func (r defaultDirectoryCommandRunner) RunCommand(ctx context.Context, command Command) (CommandResult, error) {
 	if command.Dir == "" {
 		command.Dir = r.dir

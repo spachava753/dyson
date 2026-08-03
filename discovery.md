@@ -14,3 +14,11 @@
 - Avoid error-as-control-flow APIs; make common failure states inspectable in Starlark
 - Starlark supports Python-style keyword-only function parameters after a bare `*`; use this when a compatibility surface must reject extra positional arguments
 - Host custom values can support attribute assignment through `starlark.HasSetField`; implementations must still reject writes after `Freeze()`
+- The pinned Starlark runtime exposes no public seam for extending native bytes methods; `internal/pybytes` registers `decode` through the runtime's internal method table so Dyson results remain exact `starlark.Bytes` values
+- Open file values can persist in REPL globals across successful chunks; terminal `Sphere.Close` closes both the per-session global-file registry and the descriptor table shared by `os` and `tempfile`
+- `NewSphere` installs only explicit `SphereSource` values; unknown load names do not fall back to the ambient filesystem
+- `ReadFileSystem.OpenRead` and `ReadFile.Read` use ordinary synchronous I/O; file operations intentionally do not receive the active `Eval` context, and both `HostFS` and `IOFS` implement the capability directly
+- Global `open` rejects an empty filename before adapter path normalization, and read adapters reject directories before returning a file value
+- Binary `file.read(size)` accepts `None`, `-1`, or a non-negative byte count; unlike text streams, other negative sizes are errors
+- CPython UTF-8 replacement consumes a valid multibyte prefix up to, but not including, a malformed continuation; semantically invalid second bytes invalidate only the lead byte
+- Custom Starlark loaders use the closable `Stdlib` owner so failed executions cannot strand global files or `os`/`tempfile` descriptors

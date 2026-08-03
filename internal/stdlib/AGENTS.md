@@ -7,7 +7,7 @@ This directory contains loadable Starlark standard-library compatibility modules
 - Put each module in its own package under `internal/stdlib/<name>`.
 - Export `const ModuleName = "<name>"`.
 - Export `var Module = &starlarkstruct.Module{Name: ModuleName, Members: starlark.StringDict{...}}` for static immutable module namespaces, load an embedded Starlark source file into `var Module` when most behavior is clearer in Starlark, or `func MakeModule(...) *starlarkstruct.Module` when a module needs per-session state.
-- Add the module to the root `dyson.StdlibModules(config)` factory as `{ModuleName + ".star": {ModuleName: Module}}` or by calling its module factory. Host-backed behavior must come from `StdlibConfig`; do not construct ambient host capabilities in the root factory.
+- Add loadable modules to the root standard-library assembly as `{ModuleName + ".star": {ModuleName: Module}}` or by calling their module factory. Python-inspired globals belong in `internal/stdlib/builtins`. Host-backed behavior must come from `StdlibConfig`; do not construct ambient host capabilities in the root factory.
 - Builtins should be named with fully qualified names such as `ModuleName + ".compile"` so errors read like `re.compile: ...`.
 - For methods on custom Starlark values, follow Go Starlark's native bound-method pattern: keep a package-level static method table of `*starlark.Builtin` values, return `method.BindReceiver(value)` from `Attr`, and read the receiver inside the package-level builtin with `fn.Receiver()`. Avoid allocating per-attribute closure builtins such as `starlark.NewBuiltin("type.method", value.method(name))`.
 - Put the method's implementation directly in the receiver-aware builtin when it is specific to that method. Use plain package-level helpers only for genuinely shared algorithms; avoid creating trivial receiver methods that bound builtins immediately call through.
@@ -17,18 +17,22 @@ This directory contains loadable Starlark standard-library compatibility modules
 
 ## Load Semantics
 
-Callers should pass the result of `dyson.StdlibModules(config)` into `NewSphere` or their own Starlark load implementation. Go Starlark `load` imports named symbols; bare `load("re.star")` is invalid. For Python-like namespacing, expose the module namespace as a symbol and import it explicitly:
+`dyson.NewSphere` installs only the `SphereSource` values passed by its caller. Use `dyson.ModuleSet` and `dyson.GlobalSet` for custom bindings, pass a `dyson.Stdlib` for the full compatibility surface, or pass `stdlib.Select(...)` for an exact owned subset. Unknown load names fail without ambient filesystem fallback. Callers that provide their own Starlark thread and loader must create and close `dyson.NewStdlib(config)`, then use its `Modules()` and `Globals()` snapshots. Go Starlark `load` imports named symbols; bare `load("re.star")` is invalid. For Python-like namespacing, expose the module namespace as a symbol and import it explicitly:
 
 ```python
 load("re.star", "re")
 pattern = re.compile("[a-z]+", re.I | re.M)
 ```
 
-The root `dyson.StdlibModules(config)` factory returns only namespace symbols for stdlib modules. Direct member imports such as `load("re.star", "compile")` are intentionally unsupported.
+The root `dyson.Stdlib` owner exposes only namespace symbols for stdlib modules through `Modules()`. Direct member imports such as `load("re.star", "compile")` are intentionally unsupported.
 
 ## Runtime Values
 
-Prefer plain Starlark values (`None`, bool, int, float, string, bytes, tuple, list, dict, and set where supported) when a custom value is not required. Custom `starlark.Value` implementations are appropriate for real module-defined types such as compiled patterns, matches, response objects, and tuple-like values.
+Prefer plain Starlark values (`None`, bool, int, float, string, bytes, tuple, list, dict, and set where supported) when a custom value is not required. Construct byte results through `internal/pybytes` so they remain native `starlark.Bytes` with Dyson's Python-compatible methods. Custom `starlark.Value` implementations are appropriate for real module-defined types such as compiled patterns, matches, response objects, open files, and tuple-like values.
+
+Global `open` handles belong to the per-session `FileRegistry`. Explicit file close must unregister them, while registry close must attempt every remaining handle and report joined errors. Descriptor-style handles from `os` and `tempfile` belong to the shared `xfs.FileDescriptors` table, which `Sphere.Close` also closes.
+
+Text files maintain `bufferedCharacters` incrementally for every decoded chunk, including read-to-EOF operations. Do not skip accounting on the assumption that a read will succeed; I/O and decoder errors must leave already buffered text usable by later reads.
 
 Host functions are necessarily `*starlark.Builtin`; these should generally live in module globals rather than inside user data structures.
 

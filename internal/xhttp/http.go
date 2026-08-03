@@ -55,6 +55,7 @@ type BodyLimitError struct {
 	Limit int64
 }
 
+// Error returns a message containing the configured response-body limit.
 func (e *BodyLimitError) Error() string {
 	return fmt.Sprintf("xhttp: body exceeds limit of %d bytes", e.Limit)
 }
@@ -169,6 +170,7 @@ type readTimeoutConn struct {
 	enabled atomic.Bool
 }
 
+// Read applies the configured read deadline after timeout enforcement is enabled.
 func (c *readTimeoutConn) Read(buffer []byte) (int, error) {
 	if c.enabled.Load() {
 		if err := c.SetReadDeadline(time.Now().Add(c.timeout)); err != nil {

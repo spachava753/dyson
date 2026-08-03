@@ -42,6 +42,10 @@ func (f mapFileSystem) Lstat(name string) (fs.FileInfo, error) {
 	return fs.Stat(f.fsys, name)
 }
 
+func (f mapFileSystem) OpenRead(name string) (dyson.ReadFile, error) {
+	return f.fsys.Open(name)
+}
+
 type memoryEnvironment struct {
 	values map[string]string
 }
@@ -77,15 +81,45 @@ func (e *memoryEnvironment) ExpandEnv(value string) string {
 	return os.Expand(value, func(key string) string { return e.values[key] })
 }
 
-func TestStdlibModulesUsesConfiguredFileSystemAndEnvironment(t *testing.T) {
+func TestStdlibSelectionExposesExactSurface(t *testing.T) {
+	fsys := mapFileSystem{fsys: fstest.MapFS{
+		"visible.txt": {Data: []byte("selected")},
+	}}
+	stdlib := dyson.NewStdlib(dyson.StdlibConfig{FS: fsys})
+	selected := stdlib.Select(dyson.StdlibSelection{
+		Modules: []string{"re.star"},
+		Globals: []string{"open"},
+	})
+	sphere := dyson.NewSphere(nil, selected)
+	t.Cleanup(func() {
+		be.Err(t, sphere.Close(), nil)
+	})
+
+	be.Err(t, sphere.Eval(t.Context(), `
+load("re.star", "re")
+if re.match("[a-z]+", "selected") == None:
+    fail("selected module unavailable")
+file = open("visible.txt")
+if file.read() != "selected":
+    fail("selected global unavailable")
+file.close()
+`), nil)
+
+	err := sphere.Eval(t.Context(), `load("os.star", "os")`)
+	if err == nil || !strings.Contains(err.Error(), `module "os.star" is not registered`) {
+		t.Fatalf("Eval() error = %v, want unselected module rejection", err)
+	}
+}
+
+func TestStdlibUsesConfiguredFileSystemAndEnvironment(t *testing.T) {
 	fsys := mapFileSystem{fsys: fstest.MapFS{
 		"visible.txt": {Data: []byte("sandboxed")},
 	}}
 	env := &memoryEnvironment{values: map[string]string{"DYSON_TEST": "configured"}}
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{
 		FS:  fsys,
 		Env: env,
-	}), nil)
+	}))
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("os.star", "os")
@@ -93,6 +127,10 @@ if os.listdir(".") != ["visible.txt"]:
     fail("os did not use the configured filesystem")
 if os.getenv("DYSON_TEST") != "configured":
     fail("os did not use the configured environment")
+configured_file = open("visible.txt")
+if configured_file.read() != "sandboxed":
+    fail("open did not use the configured filesystem")
+configured_file.close()
 `), nil)
 }
 
@@ -142,9 +180,9 @@ type fakeTerminal struct{}
 
 func (fakeTerminal) TerminalSize() (int, int, error) { return 120, 40, nil }
 
-func TestStdlibModulesUsesConfiguredOSCapabilities(t *testing.T) {
+func TestStdlibUsesConfiguredOSCapabilities(t *testing.T) {
 	workingDirectory := &fakeWorkingDirectory{path: "/virtual/work"}
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{
 		Process:          fakeProcess{},
 		WorkingDirectory: workingDirectory,
 		Terminal:         fakeTerminal{},
@@ -153,7 +191,7 @@ func TestStdlibModulesUsesConfiguredOSCapabilities(t *testing.T) {
 			PathListSeparator: ":",
 			DevNull:           "/dev/null",
 		},
-	}), nil)
+	}))
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("os.star", "os")
@@ -191,15 +229,15 @@ func (*mutableRecordingFileSystem) Readlink(string) (string, error) {
 	return "", nil
 }
 
-func TestStdlibModulesUsesConfiguredClockForUtime(t *testing.T) {
+func TestStdlibUsesConfiguredClockForUtime(t *testing.T) {
 	fsys := &mutableRecordingFileSystem{mapFileSystem: mapFileSystem{fsys: fstest.MapFS{
 		"file.txt": {Data: []byte("content")},
 	}}}
 	clock := &fakeClock{now: time.Unix(123, 456)}
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{
 		FS:    fsys,
 		Clock: clock,
-	}), nil)
+	}))
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("os.star", "os")
@@ -210,12 +248,12 @@ os.utime("file.txt")
 	}
 }
 
-func TestStdlibModulesUsesConfiguredClock(t *testing.T) {
+func TestStdlibUsesConfiguredClock(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(100, 250_000_000)}
 	ctx := t.Context()
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{
 		Clock: clock,
-	}), nil)
+	}))
 
 	be.Err(t, sphere.Eval(ctx, `
 load("time.star", "time")
@@ -243,7 +281,7 @@ func TestHostCommandRunnerIsExplicitOptIn(t *testing.T) {
 		t.Fatal("HostStdlibConfig unexpectedly enables command execution")
 	}
 	config.CommandRunner = dyson.HostCommandRunner()
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(config), nil)
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(config))
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("subprocess.star", "subprocess")
@@ -258,7 +296,7 @@ func TestHostStdlibConfigUsesRootAsDefaultCommandDirectory(t *testing.T) {
 	runner := &recordingCommandRunner{}
 	config := dyson.HostStdlibConfig(root)
 	config.CommandRunner = runner
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(config), nil)
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(config))
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("subprocess.star", "subprocess")
@@ -278,8 +316,8 @@ os.system("tool")
 	be.Equal(t, runner.command.Dir, root)
 }
 
-func TestStdlibModulesWithoutClockFailsClosed(t *testing.T) {
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{}), nil)
+func TestStdlibWithoutClockFailsClosed(t *testing.T) {
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{}))
 
 	err := sphere.Eval(t.Context(), `
 load("time.star", "time")
@@ -293,7 +331,7 @@ time.time()
 func TestHostStdlibConfigSharesFileSystemState(t *testing.T) {
 	root := t.TempDir()
 	be.Err(t, os.WriteFile(filepath.Join(root, "source.txt"), []byte("source"), 0o600), nil)
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.HostStdlibConfig(root)), nil)
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.HostStdlibConfig(root)))
 
 	be.Err(t, sphere.Eval(t.Context(), `
 load("glob.star", "glob")
@@ -316,8 +354,8 @@ if content != b"shared":
 `), nil)
 }
 
-func TestStdlibModulesWithoutFileSystemFailsClosed(t *testing.T) {
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{}), nil)
+func TestStdlibWithoutFileSystemFailsClosed(t *testing.T) {
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{}))
 
 	err := sphere.Eval(t.Context(), `
 load("os.star", "os")
@@ -328,8 +366,8 @@ os.listdir(".")
 	}
 }
 
-func TestStdlibModulesWithoutCommandRunnerFailsClosed(t *testing.T) {
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{}), nil)
+func TestStdlibWithoutCommandRunnerFailsClosed(t *testing.T) {
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{}))
 
 	err := sphere.Eval(t.Context(), `
 load("subprocess.star", "subprocess")
@@ -352,9 +390,10 @@ func (r blockingCommandRunner) RunCommand(ctx context.Context, command dyson.Com
 
 func TestEvalCancellationStopsConfiguredCommand(t *testing.T) {
 	runner := blockingCommandRunner{started: make(chan struct{})}
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{
 		CommandRunner: runner,
-	}), nil)
+	}))
+
 	ctx, cancel := context.WithCancel(t.Context())
 	result := make(chan error, 1)
 	go func() {
@@ -376,12 +415,12 @@ subprocess.run(["block"])
 	}
 }
 
-func TestStdlibModulesUsesConfiguredCommandRunner(t *testing.T) {
+func TestStdlibUsesConfiguredCommandRunner(t *testing.T) {
 	runner := &recordingCommandRunner{}
 	ctx := t.Context()
-	sphere := dyson.NewSphere(nil, dyson.StdlibModules(dyson.StdlibConfig{
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{
 		CommandRunner: runner,
-	}), nil)
+	}))
 
 	be.Err(t, sphere.Eval(ctx, `
 load("subprocess.star", "subprocess")

@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spachava753/dyson/internal/pybytes"
 	"github.com/spachava753/dyson/internal/xfs"
 	"github.com/spachava753/dyson/internal/xos"
 	"go.starlark.net/starlark"
 )
 
+// FileSystem implements filesystem-related os module functions using explicit host capabilities.
 type FileSystem struct {
 	fsys     xfs.FS
 	platform xos.Platform
@@ -123,22 +125,29 @@ type statResultValue struct {
 	isDir bool
 }
 
+// String returns the display name of the stat result.
 func (s *statResultValue) String() string { return "os.stat_result" }
 
+// Type returns the Starlark type name for stat results.
 func (s *statResultValue) Type() string { return "os.stat_result" }
 
+// Freeze implements starlark.Value; stat results are immutable.
 func (s *statResultValue) Freeze() {}
 
+// Truth reports stat results as true.
 func (s *statResultValue) Truth() starlark.Bool { return starlark.True }
 
+// Hash reports that stat results are not hashable.
 func (s *statResultValue) Hash() (uint32, error) {
 	return 0, fmt.Errorf("unhashable type: os.stat_result")
 }
 
+// AttrNames returns the fields exposed by a stat result.
 func (s *statResultValue) AttrNames() []string {
 	return []string{"is_dir", "st_atime", "st_ctime", "st_dev", "st_ino", "st_mode", "st_mtime", "st_size"}
 }
 
+// Attr returns a stat result field or nil for an unknown attribute.
 func (s *statResultValue) Attr(name string) (starlark.Value, error) {
 	switch name {
 	case "st_mode":
@@ -611,7 +620,11 @@ func (f FileSystem) open(thread *starlark.Thread, fn *starlark.Builtin, args sta
 	if err != nil {
 		return nil, err
 	}
-	return starlark.MakeInt(f.fds.Store(file)), nil
+	fd, err := f.fds.Store(file)
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("%s: %w", fn.Name(), err), file.Close())
+	}
+	return starlark.MakeInt(fd), nil
 }
 
 func (f FileSystem) fileForFD(fn string, fdVal starlark.Int) (xfs.File, int, error) {
@@ -657,7 +670,7 @@ func (f FileSystem) read(thread *starlark.Thread, fn *starlark.Builtin, args sta
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
-	return starlark.Bytes(string(buf[:read])), nil
+	return pybytes.New(buf[:read]), nil
 }
 
 func (f FileSystem) write(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -867,20 +880,29 @@ func statResultFromDirEntry(entry fs.DirEntry) *statResultValue {
 	return &statResultValue{mode: int64(entry.Type()), isDir: entry.IsDir()}
 }
 
+// String returns a diagnostic representation of the directory entry.
 func (d *dirEntryValue) String() string { return "<DirEntry " + d.name + ">" }
 
+// Type returns the Starlark type name for directory entries.
 func (d *dirEntryValue) Type() string { return "os.DirEntry" }
 
+// Freeze implements starlark.Value; directory entries are immutable.
 func (d *dirEntryValue) Freeze() {}
 
+// Truth reports directory entries as true.
 func (d *dirEntryValue) Truth() starlark.Bool { return starlark.True }
 
-func (d *dirEntryValue) Hash() (uint32, error) { return 0, fmt.Errorf("unhashable type: os.DirEntry") }
+// Hash reports that directory entries are not hashable.
+func (d *dirEntryValue) Hash() (uint32, error) {
+	return 0, fmt.Errorf("unhashable type: os.DirEntry")
+}
 
+// AttrNames returns the fields and methods exposed by a directory entry.
 func (d *dirEntryValue) AttrNames() []string {
 	return []string{"is_dir", "is_file", "name", "path", "stat"}
 }
 
+// Attr returns a directory entry field or bound method, or nil for an unknown attribute.
 func (d *dirEntryValue) Attr(name string) (starlark.Value, error) {
 	switch name {
 	case "name":

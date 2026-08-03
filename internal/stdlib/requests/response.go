@@ -11,6 +11,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/spachava753/dyson/internal/pybytes"
 	"github.com/spachava753/dyson/internal/xhttp"
 	starlarkjson "go.starlark.net/lib/json"
 	"go.starlark.net/starlark"
@@ -52,7 +53,7 @@ func responseValueFromHTTP(response xhttp.Response, history *starlark.List) *res
 	value := &responseValue{
 		statusCode: response.StatusCode,
 		headers:    headers,
-		content:    starlark.Bytes(string(response.Body)),
+		content:    pybytes.New(response.Body),
 		url:        response.URL,
 		reason:     response.Reason,
 		encoding:   starlark.None,
@@ -72,20 +73,30 @@ func responseValueFromHTTP(response xhttp.Response, history *starlark.List) *res
 	return value
 }
 
+// String returns the Python-style response representation.
 func (r *responseValue) String() string { return fmt.Sprintf("<Response [%d]>", r.statusCode) }
-func (r *responseValue) Type() string   { return responseTypeName }
+
+// Type returns the Starlark type name for responses.
+func (r *responseValue) Type() string { return responseTypeName }
+
+// Freeze recursively freezes response collections and prevents encoding changes.
 func (r *responseValue) Freeze() {
 	r.headers.Freeze()
 	r.history.Freeze()
 	r.frozen = true
 }
+
+// Truth follows requests semantics: responses below 400 or at least 600 are true.
 func (r *responseValue) Truth() starlark.Bool {
 	return starlark.Bool(r.statusCode < http.StatusBadRequest || r.statusCode >= 600)
 }
+
+// Hash reports that responses are not hashable.
 func (r *responseValue) Hash() (uint32, error) {
 	return 0, fmt.Errorf("unhashable: %s", r.Type())
 }
 
+// Attr returns a response field or bound method, or nil for an unknown attribute.
 func (r *responseValue) Attr(name string) (starlark.Value, error) {
 	switch name {
 	case "content":
@@ -116,6 +127,7 @@ func (r *responseValue) Attr(name string) (starlark.Value, error) {
 	return nil, nil
 }
 
+// AttrNames returns the fields and methods exposed by a response.
 func (r *responseValue) AttrNames() []string {
 	names := []string{"content", "encoding", "headers", "history", "is_redirect", "ok", "reason", "status_code", "text", "url"}
 	for name := range responseMethods {
@@ -125,6 +137,7 @@ func (r *responseValue) AttrNames() []string {
 	return names
 }
 
+// SetField updates the mutable encoding override and rejects all other assignments.
 func (r *responseValue) SetField(name string, value starlark.Value) error {
 	if name != "encoding" {
 		return starlark.NoSuchAttrError(fmt.Sprintf("%s has no writable attribute %q", r.Type(), name))

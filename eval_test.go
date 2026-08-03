@@ -11,7 +11,7 @@ import (
 )
 
 func TestEvalStopsWhenContextEnds(t *testing.T) {
-	s := NewSphere(nil, nil, nil)
+	s := NewSphere(nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
@@ -43,7 +43,7 @@ func TestEvalCancellationCannotOutliveCall(t *testing.T) {
 		s := NewSphere(func(_ *starlark.Thread, _ string) {
 			close(printStarted)
 			<-releasePrint
-		}, nil, nil)
+		})
 		cause := &delayedCancellation{
 			started: make(chan struct{}),
 			release: make(chan struct{}),
@@ -73,6 +73,46 @@ func TestEvalCancellationCannotOutliveCall(t *testing.T) {
 	})
 }
 
+type closingSphereSource struct{ closeCalls int }
+
+func (*closingSphereSource) Modules() map[string]starlark.StringDict { return nil }
+func (*closingSphereSource) Globals() starlark.StringDict            { return nil }
+func (s *closingSphereSource) Close() error {
+	s.closeCalls++
+	return nil
+}
+
+func TestNewSphereSnapshotsSourceOwnership(t *testing.T) {
+	original := &closingSphereSource{}
+	replacement := &closingSphereSource{}
+	sources := []SphereSource{original}
+	s := NewSphere(nil, sources...)
+	sources[0] = replacement
+
+	be.Err(t, s.Close(), nil)
+	be.Equal(t, original.closeCalls, 1)
+	be.Equal(t, replacement.closeCalls, 0)
+}
+
+func TestNewSphereHasNoDysonBindingsByDefault(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		code string
+		want string
+	}{
+		{name: "global", code: `open("go.mod")`, want: "undefined: open"},
+		{name: "standard module", code: `load("os.star", "os")`, want: `module "os.star" is not registered`},
+		{name: "ambient module", code: `load("testdata/repl.star", "value")`, want: `module "testdata/repl.star" is not registered`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := NewSphere(nil).Eval(t.Context(), test.code)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Eval() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestNewSphereAcceptsInitialGlobals(t *testing.T) {
 	initialGlobals := starlark.StringDict{
 		"answer": starlark.MakeInt(21),
@@ -89,7 +129,7 @@ func TestNewSphereAcceptsInitialGlobals(t *testing.T) {
 			return starlark.MakeInt(value * 2), nil
 		}),
 	}
-	s := NewSphere(nil, nil, initialGlobals)
+	s := NewSphere(nil, GlobalSet(initialGlobals))
 
 	be.Err(t, s.Eval(t.Context(), `
 if double(answer) != 42:
@@ -97,11 +137,33 @@ if double(answer) != 42:
 `), nil)
 }
 
+func TestNewSphereUsesLaterSourceForMatchingBindings(t *testing.T) {
+	firstModules := ModuleSet{
+		"answer.star": {"answer": starlark.MakeInt(1)},
+	}
+	secondModules := ModuleSet{
+		"answer.star": {"answer": starlark.MakeInt(2)},
+	}
+	s := NewSphere(
+		nil,
+		firstModules,
+		GlobalSet{"value": starlark.MakeInt(1)},
+		secondModules,
+		GlobalSet{"value": starlark.MakeInt(2)},
+	)
+
+	be.Err(t, s.Eval(t.Context(), `
+load("answer.star", "answer")
+if answer != 2 or value != 2:
+    fail("later source did not replace matching bindings")
+`), nil)
+}
+
 func TestEvalPreservesGlobalsAndLoadedModules(t *testing.T) {
 	modules := map[string]starlark.StringDict{
 		"answer.star": {"answer": starlark.MakeInt(21)},
 	}
-	s := NewSphere(nil, modules, nil)
+	s := NewSphere(nil, ModuleSet(modules))
 
 	be.Err(t, s.Eval(t.Context(), `
 load("answer.star", "answer")

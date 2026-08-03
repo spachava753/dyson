@@ -5,6 +5,7 @@ import (
 	"go.starlark.net/starlarkstruct"
 )
 
+// ModuleName is the Python-compatible name of the regular-expression module.
 const ModuleName = "re"
 
 const (

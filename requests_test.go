@@ -38,8 +38,7 @@ func TestRequestsPostUsesConfiguredClient(t *testing.T) {
 			Reason:     "Found",
 		}},
 	}}
-	modules := dyson.StdlibModules(dyson.StdlibConfig{HTTPClient: client})
-	sphere := dyson.NewSphere(nil, modules, nil)
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{HTTPClient: client}))
 	be.Err(t, sphere.Eval(t.Context(), `
 load("requests.star", "requests")
 response = requests.post(
@@ -62,6 +61,8 @@ response = requests.post(
 	be.Err(t, sphere.Eval(t.Context(), `
 if response.status_code != 200 or response.json() != {"result": True}:
     fail("unexpected response")
+if response.content.decode("utf-8") != '{"result":true}':
+    fail("response content did not support bytes.decode")
 if response.headers["content-type"] != "application/json":
     fail("headers are not normalized")
 if response.headers.get("Content-Type") != None:
@@ -73,8 +74,7 @@ if len(response.history) != 1 or response.history[0].status_code != 302:
 
 func TestRequestsErrorPropagates(t *testing.T) {
 	client := &stubHTTPClient{err: errors.New("network unavailable")}
-	modules := dyson.StdlibModules(dyson.StdlibConfig{HTTPClient: client})
-	sphere := dyson.NewSphere(nil, modules, nil)
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{HTTPClient: client}))
 	err := sphere.Eval(t.Context(), `
 load("requests.star", "requests")
 requests.post("https://example.test/items", data="effect")

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/spachava753/dyson/internal/pybytes"
 	"github.com/spachava753/dyson/internal/xfs"
 	"github.com/spachava753/dyson/internal/xos"
 	"go.starlark.net/starlark"
@@ -95,7 +96,7 @@ func gettempprefixb(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs); err != nil {
 		return nil, err
 	}
-	return starlark.Bytes(template), nil
+	return pybytes.NewString(template), nil
 }
 
 func (m *moduleState) gettempdir(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -117,7 +118,7 @@ func (m *moduleState) gettempdirb(thread *starlark.Thread, fn *starlark.Builtin,
 	if err != nil {
 		return nil, err
 	}
-	return starlark.Bytes(dir), nil
+	return pybytes.NewString(dir), nil
 }
 
 func (m *moduleState) mkdtemp(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -157,7 +158,11 @@ func (m *moduleState) mkstemp(thread *starlark.Thread, fn *starlark.Builtin, arg
 		name := joinPath(params.dir, params.prefix+randomName()+params.suffix)
 		file, err := fsys.OpenFile(name, flag, 0o600)
 		if err == nil {
-			return starlark.Tuple{starlark.MakeInt(m.fds.Store(file)), starlark.String(filepath.ToSlash(name))}, nil
+			fd, err := m.fds.Store(file)
+			if err != nil {
+				return nil, errors.Join(fmt.Errorf("%s: %w", fn.Name(), err), file.Close())
+			}
+			return starlark.Tuple{starlark.MakeInt(fd), starlark.String(filepath.ToSlash(name))}, nil
 		}
 		if !isExist(err) {
 			return nil, err

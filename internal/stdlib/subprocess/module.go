@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spachava753/dyson/internal/pybytes"
 	"github.com/spachava753/dyson/internal/xctx"
 	"github.com/spachava753/dyson/internal/xos"
 	"go.starlark.net/starlark"
@@ -347,5 +348,5 @@ func streamValue(data []byte, captured, text bool) starlark.Value {
 	if text {
 		return starlark.String(string(data))
 	}
-	return starlark.Bytes(string(data))
+	return pybytes.New(data)
 }

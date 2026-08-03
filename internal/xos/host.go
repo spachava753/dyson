@@ -56,9 +56,13 @@ type Command struct {
 type StreamMode int
 
 const (
+	// StreamInherit leaves the stream connected to the parent process.
 	StreamInherit StreamMode = iota
+	// StreamPipe supplies stdin from Command.Input or captures output in CommandResult.
 	StreamPipe
+	// StreamDiscard connects the stream to the operating system's null device.
 	StreamDiscard
+	// StreamStdout redirects stderr to the command's stdout destination.
 	StreamStdout
 )
 

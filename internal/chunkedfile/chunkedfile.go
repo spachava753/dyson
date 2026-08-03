@@ -35,7 +35,7 @@ import (
 
 const debug = false
 
-// A Chunk is a portion of a source file.
+// Chunk is a portion of a source file.
 // It contains a set of expected errors.
 type Chunk struct {
 	Source   string

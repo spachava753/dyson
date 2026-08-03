@@ -6,8 +6,11 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 
 ## Project Structure
 
-- `eval.go` owns the incremental Starlark session, including globals, module loading, and evaluation cancellation.
-- `internal/xfs/` owns filesystem and path-capability seams used by stdlib modules. Keep environment, process, and platform concerns out of this package.
+- `eval.go` owns the incremental Starlark session, explicit `SphereSource` composition, globals, exact module loading without ambient fallback, evaluation cancellation, and terminal `Sphere.Close` cleanup.
+- `stdlib.go` owns the closable `Stdlib` assembled for `Sphere` and for callers using their own Starlark thread and loader.
+- `internal/pybytes/` owns Python-compatible methods added to native Starlark bytes. It intentionally depends on the pinned Starlark runtime's internal bytes method table because the runtime has no public extension seam.
+- `internal/stdlib/builtins/` owns Python-inspired globals such as `open` and the registry of live global file handles. Explicit `file.close()` unregisters a handle; `Sphere.Close` closes whatever remains.
+- `internal/xfs/` owns filesystem and path-capability seams used by stdlib modules, including the descriptor table closed by `Sphere.Close`. Keep environment, process, and platform concerns out of this package.
 - `internal/xhttp/` owns the normalized HTTP client seam and explicit host-network adapter used by stdlib modules. Keep protocol-independent network policy out of stdlib package implementations.
 - `internal/xos/` owns host OS seams that are not filesystem- or network-specific, such as environment, process, command execution, working-directory, and platform capabilities.
 - The root package aliases the `xfs`, `xhttp`, and `xos` seams needed by `StdlibConfig`.
@@ -17,6 +20,9 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 
 - This module targets Go `1.26.4`. Use modern Go idioms available up to that version.
 - Keep changes small and direct. Avoid unnecessary abstractions unless they clarify a real seam.
+- Keep Dyson byte results as native `starlark.Bytes`; route construction through `internal/pybytes` so Python-compatible methods are registered without changing bytes identity or comparison semantics.
+- `NewSphere` installs only explicit sources. Use `ModuleSet` and `GlobalSet` for custom bindings, a full `Stdlib` for the complete compatibility surface, or `Stdlib.Select` for an exact subset.
+- Global `open` uses ordinary synchronous `io.Reader` semantics. Do not add context-cancellation adapters to file operations; `HostFS` and `IOFS` should remain direct filesystem adapters.
 
 ## Starlark Design Notes
 

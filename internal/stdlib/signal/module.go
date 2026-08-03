@@ -168,17 +168,28 @@ type enumValue struct {
 	info enumInfo
 }
 
+// String returns the qualified Python enum member name.
 func (e *enumValue) String() string {
 	return strings.TrimPrefix(e.typ, ModuleName+".") + "." + e.info.name
 }
+
+// Type returns the Starlark type name for the enum.
 func (e *enumValue) Type() string { return e.typ }
-func (e *enumValue) Freeze()      {}
+
+// Freeze implements starlark.Value; enum values are immutable.
+func (e *enumValue) Freeze() {}
+
+// Truth reports whether the enum's numeric value is nonzero.
 func (e *enumValue) Truth() starlark.Bool {
 	return starlark.Bool(e.info.number != 0)
 }
+
+// Hash returns the hash of the enum's numeric value.
 func (e *enumValue) Hash() (uint32, error) {
 	return starlark.MakeInt(e.info.number).Hash()
 }
+
+// Attr returns the enum name or numeric value, or nil for an unknown attribute.
 func (e *enumValue) Attr(name string) (starlark.Value, error) {
 	switch name {
 	case "name":
@@ -188,11 +199,15 @@ func (e *enumValue) Attr(name string) (starlark.Value, error) {
 	}
 	return nil, nil
 }
+
+// AttrNames returns the fields exposed by an enum value.
 func (e *enumValue) AttrNames() []string {
 	names := []string{"name", "value"}
 	sort.Strings(names)
 	return names
 }
+
+// Binary implements equality and inequality against enum values and integers.
 func (e *enumValue) Binary(op syntax.Token, y starlark.Value, side starlark.Side) (starlark.Value, error) {
 	switch op {
 	case syntax.EQL:
@@ -215,6 +230,7 @@ func enumEqual(e *enumValue, other starlark.Value) bool {
 	}
 }
 
+// GoString returns a Python-style diagnostic representation including the numeric value.
 func (e *enumValue) GoString() string {
 	return "<" + strings.TrimPrefix(e.typ, ModuleName+".") + "." + e.info.name + ": " + strconv.Itoa(e.info.number) + ">"
 }

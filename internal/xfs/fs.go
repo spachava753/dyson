@@ -1,6 +1,8 @@
 package xfs
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -39,6 +41,17 @@ type RemoveTreeFS interface {
 	RemoveTree(name string) error
 }
 
+// ReadFile is the minimal handle required by Python-style file reading.
+type ReadFile interface {
+	io.Reader
+	io.Closer
+}
+
+// ReadFS optionally adds read-only file access.
+type ReadFS interface {
+	OpenRead(name string) (ReadFile, error)
+}
+
 // File is a file handle used by descriptor-style Starlark operations.
 type File interface {
 	io.Reader
@@ -53,11 +66,14 @@ type OpenFS interface {
 	OpenFile(name string, flag int, perm fs.FileMode) (File, error)
 }
 
+var errFileDescriptorsClosed = errors.New("file descriptor table is closed")
+
 // FileDescriptors stores process-local file descriptors shared by Starlark stdlib modules.
 type FileDescriptors struct {
-	mu    sync.Mutex
-	next  int
-	files map[int]File
+	mu     sync.Mutex
+	next   int
+	files  map[int]File
+	closed bool
 }
 
 // NewFileDescriptors returns an empty descriptor table whose first allocated descriptor is 3.
@@ -65,14 +81,18 @@ func NewFileDescriptors() *FileDescriptors {
 	return &FileDescriptors{next: 3, files: map[int]File{}}
 }
 
-// Store records file and returns its descriptor number.
-func (f *FileDescriptors) Store(file File) int {
+// Store records file and returns its descriptor number. It returns an error and
+// leaves file open after the table has been closed.
+func (f *FileDescriptors) Store(file File) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.closed {
+		return 0, errFileDescriptorsClosed
+	}
 	fd := f.next
 	f.next++
 	f.files[fd] = file
-	return fd
+	return fd, nil
 }
 
 // Lookup returns the file for fd.
@@ -88,6 +108,27 @@ func (f *FileDescriptors) Delete(fd int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.files, fd)
+}
+
+// Close closes every stored file and prevents future stores. It is idempotent.
+func (f *FileDescriptors) Close() error {
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		return nil
+	}
+	f.closed = true
+	files := f.files
+	f.files = nil
+	f.mu.Unlock()
+
+	var closeErrors []error
+	for fd, file := range files {
+		if err := file.Close(); err != nil {
+			closeErrors = append(closeErrors, fmt.Errorf("close file descriptor %d: %w", fd, err))
+		}
+	}
+	return errors.Join(closeErrors...)
 }
 
 // PathFS optionally adds absolute and canonical path resolution.
@@ -191,6 +232,26 @@ func (f HostFS) Readlink(name string) (string, error) {
 	return os.Readlink(f.resolve(name))
 }
 
+// OpenRead opens a host file for reading. Directories are rejected here rather
+// than deferring EISDIR until the first read.
+func (f HostFS) OpenRead(name string) (ReadFile, error) {
+	path := f.resolve(name)
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if info.IsDir() {
+		_ = file.Close()
+		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.EISDIR}
+	}
+	return file, nil
+}
+
 // OpenFile opens a host file.
 func (f HostFS) OpenFile(name string, flag int, perm fs.FileMode) (File, error) {
 	return os.OpenFile(f.resolve(name), flag, perm)
@@ -270,6 +331,29 @@ func (f IOFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, fs.ErrInvalid
 	}
 	return fs.Stat(f.FS, name)
+}
+
+// OpenRead opens a contained io/fs file for reading. Directories are rejected
+// here rather than deferring EISDIR until the first read.
+func (f IOFS) OpenRead(name string) (ReadFile, error) {
+	name, ok := ioPath(name)
+	if !ok {
+		return nil, fs.ErrInvalid
+	}
+	file, err := f.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if info.IsDir() {
+		_ = file.Close()
+		return nil, &fs.PathError{Op: "open", Path: name, Err: syscall.EISDIR}
+	}
+	return file, nil
 }
 
 // Lstat falls back to Stat because plain io/fs has no lstat operation.

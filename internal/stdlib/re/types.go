@@ -3,6 +3,7 @@ package re
 import (
 	"regexp"
 
+	"github.com/spachava753/dyson/internal/pybytes"
 	"go.starlark.net/starlark"
 )
 
@@ -19,7 +20,7 @@ func (t regexText) window(pos, endpos int) regexText {
 
 func (t regexText) starlarkValue(s string) starlark.Value {
 	if t.bytes {
-		return starlark.Bytes(s)
+		return pybytes.NewString(s)
 	}
 	return starlark.String(s)
 }

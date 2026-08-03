@@ -10,11 +10,13 @@ import (
 	"go.starlark.net/starlark"
 )
 
+// Process implements process-related os module functions using explicit host capabilities.
 type Process struct {
 	process       xos.Process
 	commandRunner xos.CommandRunner
 }
 
+// WorkingDirectory implements working-directory os module functions using an explicit host capability.
 type WorkingDirectory struct {
 	dir xos.WorkingDir
 }

@@ -9,6 +9,7 @@ import (
 	"go.starlark.net/starlark"
 )
 
+// Environment implements environment-related os module functions using explicit host capabilities.
 type Environment struct {
 	env      xos.Env
 	platform xos.Platform

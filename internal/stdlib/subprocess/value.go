@@ -21,6 +21,7 @@ type completedProcessValue struct {
 	stderr     starlark.Value
 }
 
+// String returns the Python-style CompletedProcess representation.
 func (p *completedProcessValue) String() string {
 	parts := []string{fmt.Sprintf("args=%s", p.args), fmt.Sprintf("returncode=%d", p.returncode)}
 	if p.stdout != starlark.None {
@@ -32,20 +33,25 @@ func (p *completedProcessValue) String() string {
 	return "CompletedProcess(" + strings.Join(parts, ", ") + ")"
 }
 
+// Type returns the Starlark type name for completed processes.
 func (p *completedProcessValue) Type() string { return completedProcessTypeName }
 
+// Freeze recursively freezes values retained by the completed process.
 func (p *completedProcessValue) Freeze() {
 	p.args.Freeze()
 	p.stdout.Freeze()
 	p.stderr.Freeze()
 }
 
+// Truth reports completed process values as true.
 func (p *completedProcessValue) Truth() starlark.Bool { return starlark.True }
 
+// Hash reports that completed process values are not hashable.
 func (p *completedProcessValue) Hash() (uint32, error) {
 	return 0, fmt.Errorf("unhashable: %s", p.Type())
 }
 
+// Attr returns a completed process field or bound method, or nil for an unknown attribute.
 func (p *completedProcessValue) Attr(name string) (starlark.Value, error) {
 	switch name {
 	case "args":
@@ -63,6 +69,7 @@ func (p *completedProcessValue) Attr(name string) (starlark.Value, error) {
 	return nil, nil
 }
 
+// AttrNames returns the fields and methods exposed by a completed process.
 func (p *completedProcessValue) AttrNames() []string {
 	names := []string{"args", "returncode", "stderr", "stdout"}
 	for name := range completedProcessMethods {
