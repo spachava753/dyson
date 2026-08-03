@@ -55,6 +55,8 @@ func translatePattern(pattern string, flags int) string {
 	return pattern
 }
 
+// stripVerbosePattern removes unescaped whitespace and # comments outside
+// character classes while preserving escapes and class contents.
 func stripVerbosePattern(pattern string) string {
 	var out strings.Builder
 	inClass := false

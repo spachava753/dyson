@@ -45,6 +45,8 @@ func pathIsAbs(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kw
 	return starlark.Bool(strings.HasPrefix(value, "/")), err
 }
 
+// pathJoin joins POSIX-style path components without cleaning them. A later
+// absolute component discards the accumulated prefix, matching os.path.join.
 func pathJoin(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(args) == 0 {
 		var first string
@@ -179,6 +181,8 @@ func pathParts(value string) []string {
 	return strings.Split(value, "/")
 }
 
+// pathCommonpath returns the shared leading path components after cleaning every
+// input. It rejects empty input and mixtures of absolute and relative paths.
 func pathCommonpath(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var paths starlark.Iterable
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "paths", &paths); err != nil {

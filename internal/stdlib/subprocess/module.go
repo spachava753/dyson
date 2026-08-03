@@ -45,6 +45,9 @@ func MakeModule(runner xos.CommandRunner) *starlarkstruct.Module {
 	return m
 }
 
+// runBuiltin returns subprocess.run backed by runner. It validates the supported
+// Python arguments, resolves stream and text modes, executes with the active
+// context, and shapes captured output into a CompletedProcess value.
 func runBuiltin(runner xos.CommandRunner) func(*starlark.Thread, *starlark.Builtin, starlark.Tuple, []starlark.Tuple) (starlark.Value, error) {
 	return func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		var argv starlark.Value

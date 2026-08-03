@@ -44,6 +44,9 @@ func (g moduleImplementation) glob(thread *starlark.Thread, fn *starlark.Builtin
 	return stringList(results), nil
 }
 
+// globSegments recursively resolves pathname segments beneath prefix. It handles
+// recursive ** as zero or more directories, validates literal segments, and
+// applies hidden-file policy while matching wildcard segments.
 func (g moduleImplementation) globSegments(thread *starlark.Thread, prefix string, segments []string, recursive, includeHidden bool) ([]string, error) {
 	if len(segments) == 0 {
 		if prefix == "" {
@@ -131,6 +134,9 @@ func (g moduleImplementation) globSegments(thread *starlark.Thread, prefix strin
 	return results, nil
 }
 
+// walk recursively lists descendants beneath prefix for ** expansion. It can
+// return files and directories or directories only, filters hidden names when
+// requested, and never descends through symbolic links.
 func (g moduleImplementation) walk(thread *starlark.Thread, prefix string, includeHidden, includeFiles bool) ([]string, error) {
 	names, err := g.listdir(thread, prefix)
 	if err != nil {
@@ -273,6 +279,9 @@ func join(directory, basename string) string {
 func hasMagic(pathname string) bool { return strings.ContainsAny(pathname, "*?[") }
 func isHidden(pathname string) bool { return strings.HasPrefix(pathname, ".") }
 
+// compilePattern translates one Python-style glob segment into an anchored
+// regular expression. It supports *, ?, character classes, class negation, and
+// treats an unmatched opening bracket literally.
 func compilePattern(pattern string) (*regexp.Regexp, error) {
 	var expression strings.Builder
 	expression.WriteByte('^')

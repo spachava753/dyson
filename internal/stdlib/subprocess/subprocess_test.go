@@ -57,6 +57,7 @@ func newTestThread(t *testing.T, module *starlarkstruct.Module) *starlark.Thread
 
 type fakeRunner struct{}
 
+// RunCommand emulates shell and argv commands used by subprocess compatibility tests.
 func (fakeRunner) RunCommand(_ context.Context, command xos.Command) (xos.CommandResult, error) {
 	if command.Shell {
 		stdout := []byte("shell:" + command.Args[0] + "\n")

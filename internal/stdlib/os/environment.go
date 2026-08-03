@@ -22,6 +22,9 @@ func (f Environment) configuredEnv(fn string) (xos.Env, error) {
 	return f.env, nil
 }
 
+// getExecPath returns the configured executable search path, allowing a supplied
+// environment mapping to override PATH and using Python's default path when the
+// effective value is empty.
 func (f Environment) getExecPath(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var env starlark.Value = starlark.None
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "env?", &env); err != nil {

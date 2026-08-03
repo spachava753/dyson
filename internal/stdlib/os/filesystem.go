@@ -337,6 +337,8 @@ func (f FileSystem) mkdir(thread *starlark.Thread, fn *starlark.Builtin, args st
 	return starlark.None, fsys.Mkdir(path, fs.FileMode(mode))
 }
 
+// makedirs creates each non-empty path component in order. Existing ancestors
+// are accepted, while an existing leaf is accepted only when exist_ok is true.
 func (f FileSystem) makedirs(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var path string
 	modeVal := starlark.MakeInt(0o777)
@@ -499,6 +501,8 @@ func (f FileSystem) chown(thread *starlark.Thread, fn *starlark.Builtin, args st
 	return starlark.None, fsys.Chown(path, uid, gid)
 }
 
+// utime applies either the configured clock's current time or a two-item
+// sequence of numeric Unix timestamps to both filesystem timestamps.
 func (f FileSystem) utime(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var path string
 	var timesVal starlark.Value = starlark.None

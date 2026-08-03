@@ -58,6 +58,9 @@ func (f *FileRegistry) Close() error {
 	return errors.Join(closeErrors...)
 }
 
+// open validates the supported Python open signature, constructs any text
+// decoder before acquiring the file, and registers the resulting handle for
+// session cleanup.
 func (f *FileRegistry) open(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var path string
 	mode := "r"
@@ -234,6 +237,9 @@ func (f *fileValue) AttrNames() []string {
 	return []string{"close", "read"}
 }
 
+// fileRead validates Python read sizing and returns native bytes or decoded text.
+// Binary reads accept only -1 as a negative size; text reads retain decoded
+// overflow so character counts remain exact across calls.
 func fileRead(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	file, err := fileReceiver(fn)
 	if err != nil {
@@ -286,6 +292,9 @@ func fileRead(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwa
 	return starlark.String(file.takeBufferedText(size)), nil
 }
 
+// fillText reads and decodes bounded chunks until EOF or until size characters
+// are buffered. Every decoded chunk is retained before a later I/O or decoder
+// error is returned, allowing subsequent reads to consume that buffered text.
 func (f *fileValue) fillText(size int64) error {
 	const maxChunk = 4096
 	noProgress := 0

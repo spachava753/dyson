@@ -154,6 +154,8 @@ func (r *responseValue) SetField(name string, value starlark.Value) error {
 	return nil
 }
 
+// text decodes buffered response content using the mutable encoding selection.
+// Invalid input is replaced, matching requests' user-facing text behavior.
 func (r *responseValue) text() string {
 	content := []byte(r.content)
 	encoding, _ := starlark.AsString(r.encoding)
@@ -194,6 +196,8 @@ func normalizeEncoding(value string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), "_", "-"))
 }
 
+// jsonEncoding infers JSON Unicode encoding from a byte-order mark and defaults
+// to UTF-8 when no supported mark is present.
 func jsonEncoding(content []byte) string {
 	switch {
 	case len(content) >= 4 && string(content[:4]) == "\x00\x00\xfe\xff":

@@ -160,6 +160,9 @@ func decodeBuiltin(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple
 	return starlark.String(decoded), nil
 }
 
+// utf8Sequence classifies the first non-empty input sequence under RFC 3629.
+// width is the number of bytes to consume for a valid or malformed sequence;
+// incomplete is reported only when a non-final chunk may provide more bytes.
 func utf8Sequence(input []byte, final bool) (width int, valid, incomplete bool) {
 	first := input[0]
 	if first < utf8.RuneSelf {

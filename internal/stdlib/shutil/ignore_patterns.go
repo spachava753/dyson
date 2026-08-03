@@ -8,6 +8,8 @@ import (
 
 const ignorePatternFuncName = ModuleName + ".ignore_patterns.<locals>._ignore"
 
+// ignorePatterns validates glob patterns and returns a copytree ignore callback
+// that selects each supplied name matching at least one pattern.
 func (m moduleFunctions) ignorePatterns(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if len(kwargs) != 0 {
 		return nil, fmt.Errorf("%s: unexpected keyword argument %s", fn.Name(), kwargs[0][0])
@@ -48,6 +50,8 @@ func (m moduleFunctions) ignorePatterns(_ *starlark.Thread, fn *starlark.Builtin
 	}), nil
 }
 
+// matchGlob matches one byte-oriented name against a pattern containing only
+// * and ? wildcards, using a single dynamic-programming row.
 func matchGlob(name, pattern string) bool {
 	matched := make([]bool, len(pattern)+1)
 	matched[0] = true

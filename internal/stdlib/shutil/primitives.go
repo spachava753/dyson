@@ -81,6 +81,8 @@ func (m moduleFunctions) copyfile(_ *starlark.Thread, fn *starlark.Builtin, args
 	return m.copyfileImpl(fn.Name(), src, dst, followSymlinks)
 }
 
+// copyfileImpl enforces the supported symlink policy, prevents copying a file
+// onto itself when the destination exists, and then performs the byte copy.
 func (m moduleFunctions) copyfileImpl(fn, src, dst string, followSymlinks bool) (starlark.Value, error) {
 	if !followSymlinks {
 		return nil, fmt.Errorf("%s: follow_symlinks=False is not supported", fn)
@@ -127,6 +129,9 @@ func (m moduleFunctions) copystat(thread *starlark.Thread, fn *starlark.Builtin,
 	return m.copyMetadata(thread, fn.Name(), src, dst, followSymlinks, true)
 }
 
+// copyMetadata copies source mode bits to dst and optionally copies access and
+// modification times. It delegates through the configured os module so the
+// filesystem capability and its errors remain authoritative.
 func (m moduleFunctions) copyMetadata(thread *starlark.Thread, fn, src, dst string, followSymlinks, times bool) (starlark.Value, error) {
 	if !followSymlinks {
 		return nil, fmt.Errorf("%s: follow_symlinks=False is not supported", fn)
@@ -223,6 +228,9 @@ func (m moduleFunctions) copytree(thread *starlark.Thread, fn *starlark.Builtin,
 	return m.copytreeImpl(thread, fn.Name(), src, dst, ignore, copyFunction, dirsExistOK)
 }
 
+// copytreeImpl recursively copies src into dst, optionally merging an existing
+// directory. It applies the ignore callback at each level, delegates file copies
+// when requested, and copies directory metadata after its children.
 func (m moduleFunctions) copytreeImpl(thread *starlark.Thread, fn, src, dst string, ignore, copyFunction starlark.Value, dirsExistOK bool) (starlark.Value, error) {
 	exists, err := m.pathTruth(thread, "exists", dst)
 	if err != nil {
@@ -306,6 +314,9 @@ func (m moduleFunctions) copytreeImpl(thread *starlark.Thread, fn, src, dst stri
 
 var errRmtreeSymlink = errors.New("cannot call rmtree on a symbolic link")
 
+// rmtree validates the supported callback options, invokes capability-backed
+// safe recursive deletion, and translates missing-path and symlink failures into
+// shutil-specific errors unless ignore_errors suppresses them.
 func (m moduleFunctions) rmtree(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var path string
 	ignoreErrors := false
@@ -359,6 +370,9 @@ func (p primitives) removeTree(path string) error {
 	return remover.RemoveTree(path)
 }
 
+// move resolves a directory destination to dst/base(src), rejects an existing
+// final destination, and delegates to os.rename. Cross-filesystem copy fallback
+// is intentionally unsupported, so copy_function is currently unused.
 func (m moduleFunctions) move(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var src, dst string
 	var copyFunction starlark.Value = starlark.None
@@ -402,6 +416,8 @@ func (m moduleFunctions) diskUsage(_ *starlark.Thread, fn *starlark.Builtin, arg
 	return m.primitives.diskUsage(fn.Name(), path)
 }
 
+// chown validates Dyson's supported ownership options, maps omitted user or
+// group values to -1, and delegates numeric ownership changes to os.chown.
 func (m moduleFunctions) chown(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var path string
 	var user, group, dirFD starlark.Value = starlark.None, starlark.None, starlark.None
@@ -455,6 +471,9 @@ func (m moduleFunctions) getTerminalSize(_ *starlark.Thread, fn *starlark.Builti
 	return starlark.Tuple{starlark.MakeInt(columnsValue), starlark.MakeInt(linesValue)}, nil
 }
 
+// which resolves command directly when it contains a path separator; otherwise
+// it searches the supplied or environment PATH for the first accessible,
+// non-directory candidate using F_OK|X_OK by default.
 func (m moduleFunctions) which(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var command string
 	var mode, searchPath starlark.Value = starlark.None, starlark.None

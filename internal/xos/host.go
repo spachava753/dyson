@@ -273,6 +273,8 @@ func (Host) RunCommand(ctx context.Context, command Command) (CommandResult, err
 	return result, nil
 }
 
+// lookPathInEnv searches only the PATH supplied in env and returns the first
+// non-directory candidate with any executable bit set.
 func lookPathInEnv(file string, env []string) (string, error) {
 	pathList := ""
 	for _, kv := range env {

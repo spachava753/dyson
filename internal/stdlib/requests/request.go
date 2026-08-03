@@ -19,6 +19,9 @@ import (
 	"go.starlark.net/starlark"
 )
 
+// requestBuiltin returns the requests.request implementation. It validates and
+// normalizes the Python-compatible arguments, builds a buffered capability
+// request, and delegates it with the active evaluation context.
 func requestBuiltin(client xhttp.Client) func(*starlark.Thread, *starlark.Builtin, starlark.Tuple, []starlark.Tuple) (starlark.Value, error) {
 	return func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		if len(args) > 2 {
@@ -154,6 +157,9 @@ func requestBuiltin(client xhttp.Client) func(*starlark.Thread, *starlark.Builti
 	}
 }
 
+// rejectUnsupported fails closed for requests options Dyson cannot honor. False
+// stream and true verify values are accepted because they preserve supported
+// buffered-response and default-TLS behavior.
 func rejectUnsupported(fn string, files, proxies, hooks, stream, verify, cert starlark.Value) error {
 	if files != starlark.None {
 		return fmt.Errorf("%s: files is not supported", fn)
@@ -310,6 +316,9 @@ func requestBody(thread *starlark.Thread, data, jsonValue starlark.Value) (prepa
 	return preparedBody{}, nil
 }
 
+// encodeParams converts requests-style parameters into form/query encoding.
+// Strings and bytes pass through unchanged; mappings and pair sequences expand
+// non-string sequence values, omit None values, and percent-encode scalars.
 func encodeParams(value starlark.Value) (string, error) {
 	if raw, err := stringOrBytes(value); err == nil {
 		return raw, nil

@@ -76,6 +76,8 @@ func newRequestHelper(request *starlark.Builtin, method string, parameters ...he
 	})
 }
 
+// bindHelperArgs binds the method helper's declared positional and keyword
+// parameters, applies defaults, and forwards unknown keywords to request.
 func bindHelperArgs(fn string, parameters []helperParameter, args starlark.Tuple, kwargs []starlark.Tuple) ([]starlark.Value, []starlark.Tuple, error) {
 	if len(args) > len(parameters) {
 		argument := "arguments"
