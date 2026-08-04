@@ -2,7 +2,6 @@ package shutil
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,30 +10,15 @@ import (
 	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson/internal/chunkedfile"
 	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
+	"github.com/spf13/afero"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarktest"
 	"go.starlark.net/syntax"
 )
 
 type openFSWithoutIdentity struct {
-	host xfs.HostFS
-}
-
-func (f openFSWithoutIdentity) ReadDir(name string) ([]fs.DirEntry, error) {
-	return f.host.ReadDir(name)
-}
-
-func (f openFSWithoutIdentity) Stat(name string) (fs.FileInfo, error) {
-	return f.host.Stat(name)
-}
-
-func (f openFSWithoutIdentity) Lstat(name string) (fs.FileInfo, error) {
-	return f.host.Lstat(name)
-}
-
-func (f openFSWithoutIdentity) OpenFile(name string, flag int, perm fs.FileMode) (xfs.File, error) {
-	return f.host.OpenFile(name, flag, perm)
+	afero.Fs
 }
 
 func TestShutilTestdata(t *testing.T) {
@@ -49,7 +33,7 @@ func TestShutilTestdata(t *testing.T) {
 	writeFile(t, root, "bin/tool", "#!/bin/sh\n")
 	be.Err(t, os.Chmod(filepath.Join(root, "bin", "tool"), 0o755), nil)
 
-	fileDescriptors := xfs.NewFileDescriptors()
+	fileDescriptors := stdlibfs.NewFileDescriptors()
 	osConfig := stdlibos.HostConfig(root)
 	osConfig.FileDescriptors = fileDescriptors
 	osModule := stdlibos.MakeModule(osConfig)
@@ -83,13 +67,21 @@ func TestRmtreeDoesNotFollowDirectorySymlinks(t *testing.T) {
 	be.Err(t, err, nil)
 	_, err = os.Stat(filepath.Join(outside, "keep.txt"))
 	be.Err(t, err, nil)
+
+	be.Err(t, os.Symlink(outside, filepath.Join(root, "tree-link")), nil)
+	_, err = starlark.Call(newTestThread(t, osModule, module), module.Members["rmtree"], starlark.Tuple{starlark.String("tree-link")}, nil)
+	if err == nil || !strings.Contains(err.Error(), "cannot call rmtree on a symbolic link") {
+		t.Fatalf("rmtree symlink error = %v", err)
+	}
+	_, err = os.Lstat(filepath.Join(root, "tree-link"))
+	be.Err(t, err, nil)
 }
 
 func TestCopyfileFailsClosedWithoutSameFileCheck(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "source.txt", "keep")
-	host := xfs.HostFS{Root: root}
-	filesystem := openFSWithoutIdentity{host: host}
+	host := stdlibfs.NewHost(afero.NewOsFs(), root)
+	filesystem := openFSWithoutIdentity{Fs: host}
 	osConfig := stdlibos.HostConfig(root)
 	osConfig.FS = filesystem
 	osModule := stdlibos.MakeModule(osConfig)

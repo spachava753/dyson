@@ -3,7 +3,6 @@ package builtins
 import (
 	"errors"
 	"io"
-	"io/fs"
 	"math"
 	"strings"
 	"syscall"
@@ -11,11 +10,13 @@ import (
 	"testing/fstest"
 
 	"github.com/nalgeon/be"
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
+	"github.com/spf13/afero"
 	"go.starlark.net/starlark"
 )
 
 type countingFile struct {
+	afero.File
 	data        string
 	offset      int
 	readCalls   int
@@ -43,12 +44,12 @@ func (f *countingFile) Read(buffer []byte) (int, error) {
 
 func (*countingFile) Close() error { return nil }
 
-type countingFS struct{ file *countingFile }
+type countingFS struct {
+	afero.Fs
+	file *countingFile
+}
 
-func (countingFS) ReadDir(string) ([]fs.DirEntry, error) { return nil, fs.ErrInvalid }
-func (countingFS) Stat(string) (fs.FileInfo, error)      { return nil, fs.ErrInvalid }
-func (countingFS) Lstat(string) (fs.FileInfo, error)     { return nil, fs.ErrInvalid }
-func (f countingFS) OpenRead(_ string) (xfs.ReadFile, error) {
+func (f countingFS) Open(string) (afero.File, error) {
 	return f.file, nil
 }
 
@@ -56,10 +57,10 @@ func TestOpenRejectsDirectories(t *testing.T) {
 	root := t.TempDir()
 	for _, test := range []struct {
 		name string
-		fsys xfs.FS
+		fsys afero.Fs
 	}{
-		{name: "host", fsys: xfs.HostFS{Root: root}},
-		{name: "io fs", fsys: xfs.IOFS{FS: fstest.MapFS{"file.txt": {Data: []byte("content")}}}},
+		{name: "host", fsys: stdlibfs.NewHost(afero.NewOsFs(), root)},
+		{name: "io fs", fsys: stdlibfs.NewIOFS(fstest.MapFS{"file.txt": {Data: []byte("content")}})},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			files := NewFileRegistry(test.fsys)
@@ -178,7 +179,12 @@ func TestNewlineEmptyDisablesTranslation(t *testing.T) {
 
 func openFile(t *testing.T, hostFile *countingFile, args starlark.Tuple, kwargs []starlark.Tuple) starlark.HasAttrs {
 	t.Helper()
-	files := NewFileRegistry(countingFS{file: hostFile})
+	backing := afero.NewMemMapFs()
+	be.Err(t, afero.WriteFile(backing, "fixture", []byte(hostFile.data), 0o600), nil)
+	backingFile, err := backing.Open("fixture")
+	be.Err(t, err, nil)
+	hostFile.File = backingFile
+	files := NewFileRegistry(countingFS{Fs: backing, file: hostFile})
 	t.Cleanup(func() {
 		be.Err(t, files.Close(), nil)
 	})

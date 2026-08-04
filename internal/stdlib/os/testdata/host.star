@@ -1,4 +1,4 @@
-# Host-backed os module behavior that needs xfs.HostFS and xos.Host.
+# Host-backed os module behavior that needs the Afero host backend and xos.Host.
 
 ---
 # Host filesystem primitives mutate only the test temp directory selected by Go.

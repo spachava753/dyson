@@ -9,8 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xos"
+	"github.com/spf13/afero"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/syntax"
@@ -19,7 +20,7 @@ import (
 const defaultSearchPath = "/bin:/usr/bin"
 
 type primitives struct {
-	fsys     xfs.FS
+	fsys     afero.Fs
 	env      xos.Env
 	terminal xos.Terminal
 	platform xos.Platform
@@ -30,17 +31,24 @@ type moduleFunctions struct {
 	primitives primitives
 }
 
+type diskUsageFileSystem interface {
+	DiskUsage(name string) (stdlibfs.Usage, error)
+}
+
+type sameFileSystem interface {
+	SameFile(a, b string) (bool, error)
+}
+
 func (p primitives) copyFile(fn, src, dst string) (string, error) {
-	fsys, ok := p.fsys.(xfs.OpenFS)
-	if !ok {
-		return "", fmt.Errorf("%s: filesystem does not support file descriptors", fn)
+	if p.fsys == nil {
+		return "", fmt.Errorf("%s: filesystem is not configured", fn)
 	}
-	source, err := fsys.OpenFile(src, p.platform.OpenFlags.ReadOnly, 0)
+	source, err := p.fsys.OpenFile(src, p.platform.OpenFlags.ReadOnly, 0)
 	if err != nil {
 		return "", err
 	}
 	defer source.Close()
-	destination, err := fsys.OpenFile(dst, p.platform.OpenFlags.WriteOnly|p.platform.OpenFlags.Create|p.platform.OpenFlags.Truncate, 0o666)
+	destination, err := p.fsys.OpenFile(dst, p.platform.OpenFlags.WriteOnly|p.platform.OpenFlags.Create|p.platform.OpenFlags.Truncate, 0o666)
 	if err != nil {
 		return "", err
 	}
@@ -52,7 +60,7 @@ func (p primitives) copyFile(fn, src, dst string) (string, error) {
 }
 
 func (p primitives) diskUsage(fn, path string) (starlark.Value, error) {
-	fsys, ok := p.fsys.(xfs.UsageFS)
+	fsys, ok := p.fsys.(diskUsageFileSystem)
 	if !ok {
 		return nil, fmt.Errorf("%s: filesystem does not support disk usage", fn)
 	}
@@ -89,7 +97,7 @@ func (m moduleFunctions) copyfileImpl(fn, src, dst string, followSymlinks bool) 
 	}
 	if m.primitives.fsys != nil {
 		if _, err := m.primitives.fsys.Stat(dst); err == nil {
-			sameFile, ok := m.primitives.fsys.(xfs.SameFileFS)
+			sameFile, ok := m.primitives.fsys.(sameFileSystem)
 			if !ok {
 				return nil, fmt.Errorf("%s: filesystem cannot check whether src and dst are the same file", fn)
 			}
@@ -314,9 +322,9 @@ func (m moduleFunctions) copytreeImpl(thread *starlark.Thread, fn, src, dst stri
 
 var errRmtreeSymlink = errors.New("cannot call rmtree on a symbolic link")
 
-// rmtree validates the supported callback options, invokes capability-backed
-// safe recursive deletion, and translates missing-path and symlink failures into
-// shutil-specific errors unless ignore_errors suppresses them.
+// rmtree validates the supported callback options, invokes the configured
+// backend's recursive deletion, and translates missing-path and symlink failures
+// into shutil-specific errors unless ignore_errors suppresses them.
 func (m moduleFunctions) rmtree(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var path string
 	ignoreErrors := false
@@ -353,11 +361,7 @@ func (p primitives) removeTree(path string) error {
 	if p.fsys == nil {
 		return fmt.Errorf("shutil.rmtree: filesystem is not configured")
 	}
-	remover, ok := p.fsys.(xfs.RemoveTreeFS)
-	if !ok {
-		return fmt.Errorf("shutil.rmtree: filesystem does not support safe recursive deletion")
-	}
-	info, err := p.fsys.Lstat(path)
+	info, err := stdlibfs.Lstat(p.fsys, path)
 	if err != nil {
 		return err
 	}
@@ -367,7 +371,8 @@ func (p primitives) removeTree(path string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("shutil.rmtree: path is not a directory")
 	}
-	return remover.RemoveTree(path)
+	// Symlink-attack resistance below the root is an afero.Fs responsibility.
+	return p.fsys.RemoveAll(path)
 }
 
 // move resolves a directory destination to dst/base(src), rejects an existing

@@ -88,19 +88,26 @@ sphere := dyson.NewSphere(print, dyson.NewStdlib(config))
 
 | Configuration field | Consumers | Zero-value behavior |
 | --- | --- | --- |
-| `FS` | global `open`, `os`, `glob`, `shutil`, `tempfile` | File operations fail closed. Optional interfaces add read-only files, mutation, descriptor I/O, path resolution, identity, and disk usage. |
+| `FS` | global `open`, `os`, `glob`, `shutil`, `tempfile` | File operations fail closed. Assign any `afero.Fs`; its methods and optional Afero symlink interfaces define the available behavior. |
 | `Env` | `os`, `shutil`, `tempfile` | No host environment is read or mutated; required `os` operations fail closed. |
 | `Process` | `os` | Process identity, signaling, groups, and umask operations fail closed. It never enables commands. |
 | `WorkingDirectory` | `os` | `getcwd` and `chdir` fail closed. |
 | `Terminal` | `shutil` | `get_terminal_size` uses its fallback when terminal access is unavailable. |
-| `Platform` | `os`, `shutil` | Portable POSIX-like constants are used; no host access is granted. |
+| `Platform` | `os`, `shutil` | Current Go platform constants are used; no host access is granted. |
 | `CommandRunner` | `subprocess`, `os.system` | Command execution fails with `subprocess execution is not configured`. |
 | `HTTPClient` | `requests` | HTTP operations fail with `requests.request: HTTP requests are not configured`. |
 | `Clock` | `time`, implicit `os.utime` timestamps | Current-time and sleep operations fail closed; pure conversions with explicit timestamps remain available. |
 
+`os.lstat` and symlink-sensitive operations require the configured filesystem's `afero.Lstater` to report `usedLstat=true`; merely implementing the interface is not sufficient, and Dyson never substitutes link-following `Stat` behavior. `shutil.rmtree` rejects a symbolic link at its root, then delegates recursive deletion to `afero.Fs.RemoveAll`. Symlink-attack resistance within the tree therefore depends on the selected Afero backend. `HostStdlibConfig` uses `afero.OsFs`, whose `RemoveAll` delegates to Go's `os.RemoveAll`.
+
 ### File reading
 
-Python-style `open` is available only when a selected source contributes that global. A full `Stdlib` includes it; a subset must list `"open"` in `StdlibSelection.Globals`. It uses the same configured `FS` and path policy as `os.star`; it never falls back to the ambient host filesystem or invokes subprocesses. Custom filesystems provide reads by implementing the synchronous `ReadFileSystem` interface. `HostFS` and `IOFS` both implement it directly.
+Python-style `open` is available only when a selected source contributes that global. A full `Stdlib` includes it; a subset must list `"open"` in `StdlibSelection.Globals`. It uses the configured `afero.Fs` shared with `os.star`; it never falls back to the ambient host filesystem or invokes subprocesses. Afero backends such as `afero.NewMemMapFs()` can be assigned directly. Adapt a standard read-only `io/fs.FS` with `dyson.FromIOFS`, which accepts leading `./` path components, preserves source-level `fs.ReadDirFS` traversal, rejects non-read-only descriptor flags, and exposes strict link inspection when the source implements `fs.ReadLinkFS`. Do not use bare `afero.FromIOFS` as a Python-compatible descriptor backend: its `OpenFile` ignores flags and permissions.
+
+```go
+writableConfig := dyson.StdlibConfig{FS: afero.NewMemMapFs()}
+readOnlyConfig := dyson.StdlibConfig{FS: dyson.FromIOFS(os.DirFS("."))}
+```
 
 ```python
 file = open("README.md", mode="r", encoding="utf-8")

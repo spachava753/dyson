@@ -1,8 +1,9 @@
 package os
 
 import (
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xos"
+	"github.com/spf13/afero"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 )
@@ -15,21 +16,21 @@ var Module = MakeModule(HostConfig("."))
 
 // ModuleConfig groups the host domains used by Dyson's os compatibility module.
 type ModuleConfig struct {
-	FS              xfs.FS
+	FS              afero.Fs
 	Env             xos.Env
 	Process         xos.Process
 	WorkingDir      xos.WorkingDir
 	Platform        xos.Platform
 	CommandRunner   xos.CommandRunner
 	Clock           xos.Clock
-	FileDescriptors *xfs.FileDescriptors
+	FileDescriptors *stdlibfs.FileDescriptors
 }
 
 // HostConfig returns a module configuration backed by the host filesystem and OS.
 func HostConfig(root string) ModuleConfig {
 	host := xos.Host{}
 	return ModuleConfig{
-		FS:            xfs.HostFS{Root: root},
+		FS:            stdlibfs.NewHost(afero.NewOsFs(), root),
 		Env:           host,
 		Process:       host,
 		WorkingDir:    host,
@@ -43,11 +44,14 @@ func HostConfig(root string) ModuleConfig {
 // process, working-directory, and platform behavior are controlled by separate
 // domain interfaces; missing domains fail at call time.
 func MakeModule(config ModuleConfig) *starlarkstruct.Module {
+	if config.FS == nil {
+		config.FS = stdlibfs.Unavailable{}
+	}
 	if config.Platform.OSName == "" {
-		config.Platform = xos.PortablePlatform
+		config.Platform = xos.Host{}.Platform()
 	}
 	if config.FileDescriptors == nil {
-		config.FileDescriptors = xfs.NewFileDescriptors()
+		config.FileDescriptors = stdlibfs.NewFileDescriptors()
 	}
 	primitives := makePrimitiveModule(config)
 	path := makePathModule(primitives)

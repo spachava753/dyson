@@ -9,7 +9,7 @@ import (
 	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson/internal/chunkedfile"
 	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 	"go.starlark.net/starlarktest"
@@ -20,12 +20,13 @@ func TestGlobTestdata(t *testing.T) {
 	filename, err := filepath.Abs(filepath.Join("testdata", "glob.star"))
 	be.Err(t, err, nil)
 
-	osModule := stdlibos.MakeModule(stdlibos.ModuleConfig{FS: xfs.IOFS{FS: fstest.MapFS{
+	fsys := stdlibfs.NewIOFS(fstest.MapFS{
 		"a.txt":             {Data: []byte("a")},
 		"b.py":              {Data: []byte("b")},
 		".hidden":           {Data: []byte("hidden")},
 		"subdir/nested.txt": {Data: []byte("nested")},
-	}}})
+	})
+	osModule := stdlibos.MakeModule(stdlibos.ModuleConfig{FS: fsys})
 	module := MakeModule(osModule)
 
 	predeclared := starlark.StringDict{
@@ -43,6 +44,26 @@ func TestGlobTestdata(t *testing.T) {
 			chunk.Done()
 		})
 	}
+}
+
+func TestGlobRepeatedSeparatorAfterCurrentDirectoryStaysRelative(t *testing.T) {
+	fsys := stdlibfs.NewIOFS(fstest.MapFS{
+		"file.txt": {Data: []byte("content")},
+	})
+	osModule := stdlibos.MakeModule(stdlibos.ModuleConfig{FS: fsys})
+	module := MakeModule(osModule)
+
+	value, err := starlark.Call(
+		newTestThread(t, module),
+		module.Members["glob"],
+		starlark.Tuple{starlark.String(".//file.txt")},
+		nil,
+	)
+	be.Err(t, err, nil)
+	list, ok := value.(*starlark.List)
+	be.Equal(t, ok, true)
+	be.Equal(t, list.Len(), 1)
+	be.Equal(t, list.Index(0), starlark.Value(starlark.String(".//file.txt")))
 }
 
 func newTestThread(t *testing.T, module *starlarkstruct.Module) *starlark.Thread {

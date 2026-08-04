@@ -2,8 +2,9 @@ package shutil
 
 import (
 	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xos"
+	"github.com/spf13/afero"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 )
@@ -17,7 +18,7 @@ var Module = MakeModule(ModuleConfig{OS: stdlibos.Module})
 // ModuleConfig groups the host domains used by Dyson's shutil module.
 type ModuleConfig struct {
 	OS       *starlarkstruct.Module
-	FS       xfs.FS
+	FS       afero.Fs
 	Env      xos.Env
 	Terminal xos.Terminal
 	Platform xos.Platform
@@ -26,7 +27,7 @@ type ModuleConfig struct {
 // HostConfig returns a shutil configuration backed by the host filesystem and OS.
 func HostConfig(root string, osModule *starlarkstruct.Module) ModuleConfig {
 	host := xos.Host{}
-	return ModuleConfig{OS: osModule, FS: xfs.HostFS{Root: root}, Env: host, Terminal: host, Platform: host.Platform()}
+	return ModuleConfig{OS: osModule, FS: stdlibfs.NewHost(afero.NewOsFs(), root), Env: host, Terminal: host, Platform: host.Platform()}
 }
 
 // MakeModule returns a Starlark shutil module backed by config.
@@ -35,7 +36,7 @@ func MakeModule(config ModuleConfig) *starlarkstruct.Module {
 		config.OS = stdlibos.Module
 	}
 	if config.Platform.OSName == "" {
-		config.Platform = xos.PortablePlatform
+		config.Platform = xos.Host{}.Platform()
 	}
 	implementation := moduleFunctions{
 		os: config.OS,

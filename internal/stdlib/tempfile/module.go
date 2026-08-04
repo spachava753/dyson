@@ -6,13 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/spachava753/dyson/internal/pybytes"
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xos"
+	"github.com/spf13/afero"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 )
@@ -21,8 +23,9 @@ import (
 const ModuleName = "tempfile"
 
 const (
-	tmpMax   = 10000
-	template = "tmp"
+	tmpMax                 = 10000
+	template               = "tmp"
+	temporaryFileOpenFlags = os.O_RDWR | os.O_CREATE | os.O_EXCL | noFollowFlag
 )
 
 // Module is the default fail-closed Starlark namespace exposed by
@@ -32,20 +35,23 @@ var Module = MakeModule(ModuleConfig{})
 
 // ModuleConfig groups the host domains used by Dyson's tempfile module.
 type ModuleConfig struct {
-	FS              xfs.FS
+	FS              afero.Fs
 	Env             xos.Env
-	FileDescriptors *xfs.FileDescriptors
+	FileDescriptors *stdlibfs.FileDescriptors
 }
 
 // HostConfig returns a tempfile configuration backed by the host filesystem and OS.
 func HostConfig(root string) ModuleConfig {
-	return ModuleConfig{FS: xfs.HostFS{Root: root}, Env: xos.Host{}, FileDescriptors: xfs.NewFileDescriptors()}
+	return ModuleConfig{FS: stdlibfs.NewHost(afero.NewOsFs(), root), Env: xos.Host{}, FileDescriptors: stdlibfs.NewFileDescriptors()}
 }
 
 // MakeModule returns a Starlark tempfile module backed by config.
 func MakeModule(config ModuleConfig) *starlarkstruct.Module {
+	if config.FS == nil {
+		config.FS = stdlibfs.Unavailable{}
+	}
 	if config.FileDescriptors == nil {
-		config.FileDescriptors = xfs.NewFileDescriptors()
+		config.FileDescriptors = stdlibfs.NewFileDescriptors()
 	}
 	state := &moduleState{fsys: config.FS, env: config.Env, fds: config.FileDescriptors}
 	m := &starlarkstruct.Module{
@@ -72,9 +78,9 @@ func MakeModule(config ModuleConfig) *starlarkstruct.Module {
 }
 
 type moduleState struct {
-	fsys xfs.FS
+	fsys afero.Fs
 	env  xos.Env
-	fds  *xfs.FileDescriptors
+	fds  *stdlibfs.FileDescriptors
 	mu   sync.Mutex
 	dir  string
 }
@@ -126,10 +132,7 @@ func (m *moduleState) mkdtemp(thread *starlark.Thread, fn *starlark.Builtin, arg
 	if err != nil {
 		return nil, err
 	}
-	fsys, err := m.mut(fn.Name())
-	if err != nil {
-		return nil, err
-	}
+	fsys := m.fsys
 	for range tmpMax {
 		name := joinPath(params.dir, params.prefix+randomName()+params.suffix)
 		if err := fsys.Mkdir(name, 0o700); err == nil {
@@ -146,13 +149,10 @@ func (m *moduleState) mkstemp(thread *starlark.Thread, fn *starlark.Builtin, arg
 	if err != nil {
 		return nil, err
 	}
-	fsys, err := m.openfs(fn.Name())
-	if err != nil {
-		return nil, err
-	}
+	fsys := m.fsys
 	flag := params.flags
 	if flag == 0 {
-		flag = 0x242 // POSIX O_RDWR|O_CREAT|O_EXCL, matching xos.PortablePlatform.
+		flag = temporaryFileOpenFlags
 	}
 	for range tmpMax {
 		name := joinPath(params.dir, params.prefix+randomName()+params.suffix)
@@ -183,8 +183,12 @@ func (m *moduleState) mktemp(thread *starlark.Thread, fn *starlark.Builtin, args
 	}
 	for range tmpMax {
 		name := joinPath(dirname, prefix+randomName()+suffix)
-		if _, err := m.fsys.Lstat(name); err != nil {
+		_, err := stdlibfs.Lstat(m.fsys, name)
+		if errors.Is(err, fs.ErrNotExist) {
 			return starlark.String(filepath.ToSlash(name)), nil
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
 	return nil, fmt.Errorf("%s: no usable temporary filename found", fn.Name())
@@ -236,11 +240,7 @@ func (m *moduleState) params(fn string, args starlark.Tuple, kwargs []starlark.T
 	if err != nil {
 		return params{}, err
 	}
-	flags := 0x242
-	if text {
-		flags = 0x242
-	}
-	return params{suffix: suf, prefix: pre, dir: dirname, flags: flags}, nil
+	return params{suffix: suf, prefix: pre, dir: dirname, flags: temporaryFileOpenFlags}, nil
 }
 
 func (m *moduleState) optionalDir(fn string, val starlark.Value) (string, error) {
@@ -291,22 +291,6 @@ func (m *moduleState) candidateDirs() []string {
 	}
 	dirs = append(dirs, "/tmp", "/var/tmp", "/usr/tmp", ".")
 	return dirs
-}
-
-func (m *moduleState) mut(fn string) (xfs.MutFS, error) {
-	fsys, ok := m.fsys.(xfs.MutFS)
-	if !ok {
-		return nil, fmt.Errorf("%s: filesystem does not support mutation", fn)
-	}
-	return fsys, nil
-}
-
-func (m *moduleState) openfs(fn string) (xfs.OpenFS, error) {
-	fsys, ok := m.fsys.(xfs.OpenFS)
-	if !ok {
-		return nil, fmt.Errorf("%s: filesystem does not support file descriptors", fn)
-	}
-	return fsys, nil
 }
 
 func randomName() string {

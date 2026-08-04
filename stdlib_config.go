@@ -2,41 +2,13 @@ package dyson
 
 import (
 	"context"
+	"io/fs"
 
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xhttp"
 	"github.com/spachava753/dyson/internal/xos"
+	"github.com/spf13/afero"
 )
-
-// FileSystem is the minimum filesystem capability used by standard-library modules.
-type FileSystem = xfs.FS
-
-// MutableFileSystem optionally adds filesystem mutation operations.
-type MutableFileSystem = xfs.MutFS
-
-// ReadFile is the minimal handle required by Python-style file reading.
-type ReadFile = xfs.ReadFile
-
-// ReadFileSystem optionally adds read-only Python-style file access.
-type ReadFileSystem = xfs.ReadFS
-
-// File is a descriptor-style file handle.
-type File = xfs.File
-
-// OpenFileSystem optionally adds descriptor-style file I/O.
-type OpenFileSystem = xfs.OpenFS
-
-// PathFileSystem optionally adds absolute and canonical path resolution.
-type PathFileSystem = xfs.PathFS
-
-// SameFileSystem optionally adds path identity checks.
-type SameFileSystem = xfs.SameFileFS
-
-// DiskUsage describes filesystem capacity around a path.
-type DiskUsage = xfs.Usage
-
-// DiskUsageFileSystem optionally adds filesystem capacity reporting.
-type DiskUsageFileSystem = xfs.UsageFS
 
 // Environment controls environment reads and writes exposed to Starlark.
 type Environment = xos.Env
@@ -97,14 +69,21 @@ type HTTPBodyLimitError = xhttp.BodyLimitError
 // HTTPClient performs buffered HTTP requests and must honor context cancellation.
 type HTTPClient = xhttp.Client
 
+// FromIOFS adapts a standard read-only filesystem to Afero with Python-style
+// leading ./ handling, source-level fs.ReadDirFS traversal, strict no-follow
+// inspection when fs.ReadLinkFS is available, and rejection of non-read-only
+// descriptor flags.
+func FromIOFS(fsys fs.FS) afero.Fs {
+	return stdlibfs.NewIOFS(fsys)
+}
+
 // StdlibConfig declares the host capabilities shared by standard-library
-// modules. Except for Platform's portable constants, nil or zero capabilities
+// modules. Except for Platform's host-derived constants, nil or zero capabilities
 // remain unavailable rather than falling back to ambient host access.
 type StdlibConfig struct {
-	// FS is shared by os, glob, shutil, and tempfile. The concrete filesystem
-	// owns path resolution and containment; optional interfaces add read-only
-	// files, mutation, descriptor I/O, canonical paths, identity, and disk usage.
-	FS FileSystem
+	// FS is the Afero filesystem shared by open, os, glob, shutil, and tempfile.
+	// Nil keeps filesystem operations unavailable.
+	FS afero.Fs
 
 	// Env is shared by os, shutil, and tempfile. Nil disables environment access.
 	Env Environment
@@ -120,7 +99,7 @@ type StdlibConfig struct {
 	Terminal Terminal
 
 	// Platform supplies path separators, device names, and open flags. Its zero
-	// value selects portable POSIX-like constants without granting host access.
+	// value selects the current Go platform's constants without granting access.
 	Platform Platform
 
 	// CommandRunner supplies os.system and subprocess command execution. Nil
@@ -150,13 +129,13 @@ func (r defaultDirectoryCommandRunner) RunCommand(ctx context.Context, command C
 	return r.runner.RunCommand(ctx, command)
 }
 
-// configuredCommandRunner keeps command execution aligned with HostFS's base
+// configuredCommandRunner applies the rooted Afero host backend's default
 // directory without overriding an explicit subprocess cwd.
 func (c StdlibConfig) configuredCommandRunner() CommandRunner {
 	if c.CommandRunner == nil {
 		return nil
 	}
-	fsys, ok := c.FS.(xfs.HostFS)
+	fsys, ok := c.FS.(stdlibfs.Host)
 	if !ok {
 		return c.CommandRunner
 	}
@@ -173,7 +152,7 @@ func (c StdlibConfig) configuredCommandRunner() CommandRunner {
 func HostStdlibConfig(root string) StdlibConfig {
 	host := xos.Host{}
 	return StdlibConfig{
-		FS:               xfs.HostFS{Root: root},
+		FS:               stdlibfs.NewHost(afero.NewOsFs(), root),
 		Env:              host,
 		Process:          host,
 		WorkingDirectory: host,

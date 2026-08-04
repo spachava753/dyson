@@ -3,7 +3,6 @@ package dyson
 import (
 	"errors"
 	"io"
-	"io/fs"
 	"maps"
 
 	stdlibbuiltins "github.com/spachava753/dyson/internal/stdlib/builtins"
@@ -18,28 +17,9 @@ import (
 	stdlibsubprocess "github.com/spachava753/dyson/internal/stdlib/subprocess"
 	stdlibtempfile "github.com/spachava753/dyson/internal/stdlib/tempfile"
 	stdlibtime "github.com/spachava753/dyson/internal/stdlib/time"
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
 	"go.starlark.net/starlark"
 )
-
-var errFilesystemNotConfigured = errors.New("filesystem operations are not configured")
-
-type unconfiguredFileSystem struct{}
-
-// ReadDir implements FileSystem and reports that filesystem access is unavailable.
-func (unconfiguredFileSystem) ReadDir(string) ([]fs.DirEntry, error) {
-	return nil, errFilesystemNotConfigured
-}
-
-// Stat implements FileSystem and reports that filesystem access is unavailable.
-func (unconfiguredFileSystem) Stat(string) (fs.FileInfo, error) {
-	return nil, errFilesystemNotConfigured
-}
-
-// Lstat implements FileSystem and reports that filesystem access is unavailable.
-func (unconfiguredFileSystem) Lstat(string) (fs.FileInfo, error) {
-	return nil, errFilesystemNotConfigured
-}
 
 // Stdlib owns one configured standard library and its open host resources. It
 // is a SphereSource; passing it to NewSphere transfers cleanup to that Sphere.
@@ -135,9 +115,9 @@ func (s *Stdlib) Close() error {
 func NewStdlib(config StdlibConfig) *Stdlib {
 	fileSystem := config.FS
 	if fileSystem == nil {
-		fileSystem = unconfiguredFileSystem{}
+		fileSystem = stdlibfs.Unavailable{}
 	}
-	fileDescriptors := xfs.NewFileDescriptors()
+	fileDescriptors := stdlibfs.NewFileDescriptors()
 	files := stdlibbuiltins.NewFileRegistry(config.FS)
 	commandRunner := config.configuredCommandRunner()
 	osModule := stdlibos.MakeModule(stdlibos.ModuleConfig{

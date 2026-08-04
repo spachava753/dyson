@@ -8,7 +8,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/spachava753/dyson/internal/pybytes"
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
+	"github.com/spf13/afero"
 	"go.starlark.net/starlark"
 )
 
@@ -20,13 +21,13 @@ var fileMethods = map[string]*starlark.Builtin{
 // FileRegistry provides the global open builtin and owns its live handles.
 // It is not safe for concurrent use.
 type FileRegistry struct {
-	fsys   xfs.FS
+	fsys   afero.Fs
 	files  map[*fileValue]struct{}
 	closed bool
 }
 
 // NewFileRegistry returns an open-file registry backed by fsys.
-func NewFileRegistry(fsys xfs.FS) *FileRegistry {
+func NewFileRegistry(fsys afero.Fs) *FileRegistry {
 	return &FileRegistry{
 		fsys:  fsys,
 		files: map[*fileValue]struct{}{},
@@ -175,23 +176,19 @@ func (f *FileRegistry) open(_ *starlark.Thread, fn *starlark.Builtin, args starl
 	return value, nil
 }
 
-func (f *FileRegistry) openRead(path string) (xfs.ReadFile, error) {
+func (f *FileRegistry) openRead(path string) (afero.File, error) {
 	if f.closed {
 		return nil, fmt.Errorf("file session is closed")
 	}
 	if f.fsys == nil {
 		return nil, fmt.Errorf("filesystem access is not configured")
 	}
-	fsys, ok := f.fsys.(xfs.ReadFS)
-	if !ok {
-		return nil, fmt.Errorf("filesystem does not support file reading")
-	}
-	return fsys.OpenRead(path)
+	return stdlibfs.OpenRead(f.fsys, path)
 }
 
 type fileValue struct {
 	owner              *FileRegistry
-	file               xfs.ReadFile
+	file               afero.File
 	path               string
 	mode               string
 	binary             bool

@@ -2,7 +2,6 @@ package dyson_test
 
 import (
 	"context"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson"
+	"github.com/spf13/afero"
 )
 
 type recordingCommandRunner struct {
@@ -24,26 +24,6 @@ func (r *recordingCommandRunner) RunCommand(ctx context.Context, command dyson.C
 	r.ctx = ctx
 	r.command = command
 	return dyson.CommandResult{Stdout: []byte("configured\n")}, nil
-}
-
-type mapFileSystem struct {
-	fsys fstest.MapFS
-}
-
-func (f mapFileSystem) ReadDir(name string) ([]fs.DirEntry, error) {
-	return fs.ReadDir(f.fsys, name)
-}
-
-func (f mapFileSystem) Stat(name string) (fs.FileInfo, error) {
-	return fs.Stat(f.fsys, name)
-}
-
-func (f mapFileSystem) Lstat(name string) (fs.FileInfo, error) {
-	return fs.Stat(f.fsys, name)
-}
-
-func (f mapFileSystem) OpenRead(name string) (dyson.ReadFile, error) {
-	return f.fsys.Open(name)
 }
 
 type memoryEnvironment struct {
@@ -82,9 +62,9 @@ func (e *memoryEnvironment) ExpandEnv(value string) string {
 }
 
 func TestStdlibSelectionExposesExactSurface(t *testing.T) {
-	fsys := mapFileSystem{fsys: fstest.MapFS{
+	fsys := dyson.FromIOFS(fstest.MapFS{
 		"visible.txt": {Data: []byte("selected")},
-	}}
+	})
 	stdlib := dyson.NewStdlib(dyson.StdlibConfig{FS: fsys})
 	selected := stdlib.Select(dyson.StdlibSelection{
 		Modules: []string{"re.star"},
@@ -112,9 +92,9 @@ file.close()
 }
 
 func TestStdlibUsesConfiguredFileSystemAndEnvironment(t *testing.T) {
-	fsys := mapFileSystem{fsys: fstest.MapFS{
+	fsys := dyson.FromIOFS(fstest.MapFS{
 		"visible.txt": {Data: []byte("sandboxed")},
-	}}
+	})
 	env := &memoryEnvironment{values: map[string]string{"DYSON_TEST": "configured"}}
 	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{
 		FS:  fsys,
@@ -127,11 +107,40 @@ if os.listdir(".") != ["visible.txt"]:
     fail("os did not use the configured filesystem")
 if os.getenv("DYSON_TEST") != "configured":
     fail("os did not use the configured environment")
-configured_file = open("visible.txt")
+configured_file = open(".//visible.txt")
 if configured_file.read() != "sandboxed":
     fail("open did not use the configured filesystem")
 configured_file.close()
+fd = os.open("./visible.txt", os.O_RDONLY)
+if os.read(fd, 9) != b"sandboxed":
+    fail("os.open did not use the configured filesystem")
+os.close(fd)
 `), nil)
+}
+
+func TestStdlibUsesAferoMemoryFileSystem(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	be.Err(t, afero.WriteFile(fsys, "input.txt", []byte("memory"), 0o600), nil)
+	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{FS: fsys}))
+	t.Cleanup(func() {
+		be.Err(t, sphere.Close(), nil)
+	})
+
+	be.Err(t, sphere.Eval(t.Context(), `
+load("os.star", "os")
+if open("input.txt").read() != "memory":
+    fail("open did not read from MemMapFs")
+os.mkdir("output")
+fd = os.open("output/result.txt", os.O_CREAT | os.O_WRONLY, 0o600)
+os.write(fd, b"written")
+os.close(fd)
+if not os.path.isfile("output/result.txt"):
+    fail("os did not mutate MemMapFs")
+`), nil)
+
+	result, err := afero.ReadFile(fsys, "output/result.txt")
+	be.Err(t, err, nil)
+	be.Equal(t, string(result), "written")
 }
 
 type fakeClock struct {
@@ -208,31 +217,20 @@ if shutil.get_terminal_size() != (120, 40):
 }
 
 type mutableRecordingFileSystem struct {
-	mapFileSystem
+	afero.Fs
 	atime time.Time
 	mtime time.Time
 }
 
-func (*mutableRecordingFileSystem) Mkdir(string, fs.FileMode) error { return nil }
-func (*mutableRecordingFileSystem) Remove(string) error             { return nil }
-func (*mutableRecordingFileSystem) Rename(string, string) error     { return nil }
-func (*mutableRecordingFileSystem) Chmod(string, fs.FileMode) error { return nil }
-func (*mutableRecordingFileSystem) Chown(string, int, int) error    { return nil }
 func (f *mutableRecordingFileSystem) Chtimes(_ string, atime, mtime time.Time) error {
 	f.atime, f.mtime = atime, mtime
 	return nil
 }
-func (*mutableRecordingFileSystem) Truncate(string, int64) error { return nil }
-func (*mutableRecordingFileSystem) Link(string, string) error    { return nil }
-func (*mutableRecordingFileSystem) Symlink(string, string) error { return nil }
-func (*mutableRecordingFileSystem) Readlink(string) (string, error) {
-	return "", nil
-}
 
 func TestStdlibUsesConfiguredClockForUtime(t *testing.T) {
-	fsys := &mutableRecordingFileSystem{mapFileSystem: mapFileSystem{fsys: fstest.MapFS{
+	fsys := &mutableRecordingFileSystem{Fs: dyson.FromIOFS(fstest.MapFS{
 		"file.txt": {Data: []byte("content")},
-	}}}
+	})}
 	clock := &fakeClock{now: time.Unix(123, 456)}
 	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{
 		FS:    fsys,

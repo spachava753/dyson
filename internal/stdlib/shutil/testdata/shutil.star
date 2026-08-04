@@ -1,7 +1,7 @@
 # Tests for Dyson's Python-like shutil compatibility module.
 #
 # These chunks cover Go builtin orchestration over the injected os module and
-# host-facing xfs/xos capabilities from the Go harness.
+# host-facing Afero/xos capabilities from the Go harness.
 
 ---
 # The module exposes each implemented shutil function directly as a host builtin.
@@ -23,7 +23,7 @@ assert.eq(type(shutil.get_terminal_size), "builtin_function_or_method")
 assert.eq(type(shutil.ignore_patterns), "builtin_function_or_method")
 
 ---
-# copyfile, copy, and copy2 copy file contents through the injected xfs.OpenFS.
+# copyfile, copy, and copy2 copy file contents through afero.Fs.
 load("assert.star", "assert")
 load("os.star", "os")
 load("shutil.star", "shutil")

@@ -10,16 +10,17 @@ import (
 	"time"
 
 	"github.com/spachava753/dyson/internal/pybytes"
-	"github.com/spachava753/dyson/internal/xfs"
+	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xos"
+	"github.com/spf13/afero"
 	"go.starlark.net/starlark"
 )
 
 // FileSystem implements filesystem-related os module functions using explicit host capabilities.
 type FileSystem struct {
-	fsys     xfs.FS
+	fsys     afero.Fs
 	platform xos.Platform
-	fds      *xfs.FileDescriptors
+	fds      *stdlibfs.FileDescriptors
 	clock    xos.Clock
 }
 
@@ -29,32 +30,33 @@ var dirEntryMethods = map[string]*starlark.Builtin{
 	"stat":    starlark.NewBuiltin("os.DirEntry.stat", dirEntryStat),
 }
 
-func (f FileSystem) mut(fn string) (xfs.MutFS, error) {
-	fsys, ok := f.fsys.(xfs.MutFS)
-	if !ok {
-		return nil, fmt.Errorf("%s: filesystem does not support mutation", fn)
-	}
-	return fsys, nil
+type pathFileSystem interface {
+	Abs(name string) (string, error)
+	Realpath(name string) (string, error)
 }
 
-func (f FileSystem) openfs(fn string) (xfs.OpenFS, error) {
-	fsys, ok := f.fsys.(xfs.OpenFS)
-	if !ok {
-		return nil, fmt.Errorf("%s: filesystem does not support file descriptors", fn)
-	}
-	return fsys, nil
+type sameFileSystem interface {
+	SameFile(a, b string) (bool, error)
 }
 
-func (f FileSystem) pathfs(fn string) (xfs.PathFS, error) {
-	fsys, ok := f.fsys.(xfs.PathFS)
+type hardLinkFileSystem interface {
+	Link(oldname, newname string) error
+}
+
+type pathTruncateFileSystem interface {
+	Truncate(name string, size int64) error
+}
+
+func (f FileSystem) pathfs(fn string) (pathFileSystem, error) {
+	fsys, ok := f.fsys.(pathFileSystem)
 	if !ok {
 		return nil, fmt.Errorf("%s: filesystem does not support host path resolution", fn)
 	}
 	return fsys, nil
 }
 
-func (f FileSystem) samefile(fn string) (xfs.SameFileFS, error) {
-	fsys, ok := f.fsys.(xfs.SameFileFS)
+func (f FileSystem) samefile(fn string) (sameFileSystem, error) {
+	fsys, ok := f.fsys.(sameFileSystem)
 	if !ok {
 		return nil, fmt.Errorf("%s: filesystem does not support path identity checks", fn)
 	}
@@ -195,7 +197,7 @@ func (f FileSystem) listdir(thread *starlark.Thread, fn *starlark.Builtin, args 
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "path?", &path); err != nil {
 		return nil, err
 	}
-	entries, err := f.fsys.ReadDir(path)
+	entries, err := stdlibfs.ReadDir(f.fsys, path)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", fn.Name(), err)
 	}
@@ -211,7 +213,7 @@ func (f FileSystem) scandir(thread *starlark.Thread, fn *starlark.Builtin, args 
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "path?", &path); err != nil {
 		return nil, err
 	}
-	entries, err := f.fsys.ReadDir(path)
+	entries, err := stdlibfs.ReadDir(f.fsys, path)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", fn.Name(), err)
 	}
@@ -242,7 +244,7 @@ func (f FileSystem) walk(thread *starlark.Thread, fn *starlark.Builtin, args sta
 }
 
 func (f FileSystem) walkInto(path string, topdown, followlinks bool, out *[]starlark.Value) error {
-	entries, err := f.fsys.ReadDir(path)
+	entries, err := stdlibfs.ReadDir(f.fsys, path)
 	if err != nil {
 		return err
 	}
@@ -250,9 +252,18 @@ func (f FileSystem) walkInto(path string, topdown, followlinks bool, out *[]star
 	var childDirs []string
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() {
+		child := joinPath(path, name)
+		isLink := entry.Type()&fs.ModeSymlink != 0
+		isDir := entry.IsDir()
+		if isLink {
+			info, statErr := f.fsys.Stat(child)
+			isDir = statErr == nil && info.IsDir()
+		}
+		if isDir {
 			dirs = append(dirs, starlark.String(name))
-			childDirs = append(childDirs, joinPath(path, name))
+			if followlinks || !isLink {
+				childDirs = append(childDirs, child)
+			}
 		} else {
 			files = append(files, starlark.String(name))
 		}
@@ -299,7 +310,7 @@ func (f FileSystem) lstat(thread *starlark.Thread, fn *starlark.Builtin, args st
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "path", &path); err != nil {
 		return nil, err
 	}
-	info, err := f.fsys.Lstat(path)
+	info, err := stdlibfs.Lstat(f.fsys, path)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", fn.Name(), err)
 	}
@@ -330,11 +341,7 @@ func (f FileSystem) mkdir(thread *starlark.Thread, fn *starlark.Builtin, args st
 	if err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
-	}
-	return starlark.None, fsys.Mkdir(path, fs.FileMode(mode))
+	return starlark.None, f.fsys.Mkdir(path, fs.FileMode(mode))
 }
 
 // makedirs creates each non-empty path component in order. Existing ancestors
@@ -350,10 +357,7 @@ func (f FileSystem) makedirs(thread *starlark.Thread, fn *starlark.Builtin, args
 	if err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
-	}
+	fsys := f.fsys
 	clean := filepath.ToSlash(path)
 	prefix := ""
 	if strings.HasPrefix(clean, "/") {
@@ -387,10 +391,7 @@ func (f FileSystem) removedirs(thread *starlark.Thread, fn *starlark.Builtin, ar
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "name", &path); err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
-	}
+	fsys := f.fsys
 	first := true
 	for path != "" && path != "." {
 		if err := fsys.Remove(path); err != nil {
@@ -410,11 +411,7 @@ func (f FileSystem) remove(thread *starlark.Thread, fn *starlark.Builtin, args s
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "path", &path); err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
-	}
-	return starlark.None, fsys.Remove(path)
+	return starlark.None, f.fsys.Remove(path)
 }
 
 func (f FileSystem) rename(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -422,11 +419,7 @@ func (f FileSystem) rename(thread *starlark.Thread, fn *starlark.Builtin, args s
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "src", &src, "dst", &dst); err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
-	}
-	return starlark.None, fsys.Rename(src, dst)
+	return starlark.None, f.fsys.Rename(src, dst)
 }
 
 func (f FileSystem) renames(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -434,10 +427,7 @@ func (f FileSystem) renames(thread *starlark.Thread, fn *starlark.Builtin, args 
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "old", &oldname, "new", &newname); err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
-	}
+	fsys := f.fsys
 	if _, tail := splitPath(newname); tail != "" {
 		dir, _ := splitPath(newname)
 		if dir != "" {
@@ -473,11 +463,7 @@ func (f FileSystem) chmod(thread *starlark.Thread, fn *starlark.Builtin, args st
 	if err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
-	}
-	return starlark.None, fsys.Chmod(path, fs.FileMode(mode))
+	return starlark.None, f.fsys.Chmod(path, fs.FileMode(mode))
 }
 
 func (f FileSystem) chown(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -494,11 +480,7 @@ func (f FileSystem) chown(thread *starlark.Thread, fn *starlark.Builtin, args st
 	if err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
-	}
-	return starlark.None, fsys.Chown(path, uid, gid)
+	return starlark.None, f.fsys.Chown(path, uid, gid)
 }
 
 // utime applies either the configured clock's current time or a two-item
@@ -531,11 +513,7 @@ func (f FileSystem) utime(thread *starlark.Thread, fn *starlark.Builtin, args st
 		}
 		atime, mtime = unixFloat(a), unixFloat(m)
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
-	}
-	return starlark.None, fsys.Chtimes(path, atime, mtime)
+	return starlark.None, f.fsys.Chtimes(path, atime, mtime)
 }
 
 func unixFloat(seconds float64) time.Time {
@@ -554,11 +532,17 @@ func (f FileSystem) truncate(thread *starlark.Thread, fn *starlark.Builtin, args
 	if err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
+	if truncater, ok := f.fsys.(pathTruncateFileSystem); ok {
+		err := truncater.Truncate(path, size)
+		if !errors.Is(err, errors.ErrUnsupported) {
+			return starlark.None, err
+		}
+	}
+	file, err := f.fsys.OpenFile(path, f.platform.OpenFlags.WriteOnly, 0)
 	if err != nil {
 		return nil, err
 	}
-	return starlark.None, fsys.Truncate(path, size)
+	return starlark.None, errors.Join(file.Truncate(size), file.Close())
 }
 
 func (f FileSystem) link(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -566,9 +550,9 @@ func (f FileSystem) link(thread *starlark.Thread, fn *starlark.Builtin, args sta
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "src", &src, "dst", &dst); err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
+	fsys, ok := f.fsys.(hardLinkFileSystem)
+	if !ok {
+		return nil, fmt.Errorf("%s: filesystem does not support hard links", fn.Name())
 	}
 	return starlark.None, fsys.Link(src, dst)
 }
@@ -578,11 +562,11 @@ func (f FileSystem) symlink(thread *starlark.Thread, fn *starlark.Builtin, args 
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "src", &src, "dst", &dst); err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
+	fsys, ok := f.fsys.(afero.Linker)
+	if !ok {
+		return nil, fmt.Errorf("%s: %w", fn.Name(), afero.ErrNoSymlink)
 	}
-	return starlark.None, fsys.Symlink(src, dst)
+	return starlark.None, fsys.SymlinkIfPossible(src, dst)
 }
 
 func (f FileSystem) readlink(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -590,11 +574,11 @@ func (f FileSystem) readlink(thread *starlark.Thread, fn *starlark.Builtin, args
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "path", &path); err != nil {
 		return nil, err
 	}
-	fsys, err := f.mut(fn.Name())
-	if err != nil {
-		return nil, err
+	fsys, ok := f.fsys.(afero.LinkReader)
+	if !ok {
+		return nil, fmt.Errorf("%s: %w", fn.Name(), afero.ErrNoReadlink)
 	}
-	value, err := fsys.Readlink(path)
+	value, err := fsys.ReadlinkIfPossible(path)
 	if err != nil {
 		return nil, err
 	}
@@ -616,11 +600,7 @@ func (f FileSystem) open(thread *starlark.Thread, fn *starlark.Builtin, args sta
 	if err != nil {
 		return nil, err
 	}
-	fsys, err := f.openfs(fn.Name())
-	if err != nil {
-		return nil, err
-	}
-	file, err := fsys.OpenFile(path, flag, fs.FileMode(mode))
+	file, err := f.fsys.OpenFile(path, flag, fs.FileMode(mode))
 	if err != nil {
 		return nil, err
 	}
@@ -631,7 +611,7 @@ func (f FileSystem) open(thread *starlark.Thread, fn *starlark.Builtin, args sta
 	return starlark.MakeInt(fd), nil
 }
 
-func (f FileSystem) fileForFD(fn string, fdVal starlark.Int) (xfs.File, int, error) {
+func (f FileSystem) fileForFD(fn string, fdVal starlark.Int) (afero.File, int, error) {
 	fd, err := intArg(fn, "fd", fdVal)
 	if err != nil {
 		return nil, 0, err
@@ -761,7 +741,10 @@ func (f FileSystem) pathLexists(thread *starlark.Thread, fn *starlark.Builtin, a
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "path", &path); err != nil {
 		return nil, err
 	}
-	_, err := f.fsys.Lstat(path)
+	_, err := stdlibfs.Lstat(f.fsys, path)
+	if errors.Is(err, errors.ErrUnsupported) {
+		return nil, fmt.Errorf("%s: %w", fn.Name(), err)
+	}
 	return starlark.Bool(err == nil), nil
 }
 
@@ -824,7 +807,10 @@ func (f FileSystem) pathIslink(thread *starlark.Thread, fn *starlark.Builtin, ar
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "path", &path); err != nil {
 		return nil, err
 	}
-	info, err := f.fsys.Lstat(path)
+	info, err := stdlibfs.Lstat(f.fsys, path)
+	if errors.Is(err, errors.ErrUnsupported) {
+		return nil, fmt.Errorf("%s: %w", fn.Name(), err)
+	}
 	return starlark.Bool(err == nil && info.Mode()&fs.ModeSymlink != 0), nil
 }
 
@@ -870,7 +856,7 @@ func (f FileSystem) pathSamefile(thread *starlark.Thread, fn *starlark.Builtin, 
 }
 
 type dirEntryValue struct {
-	fsys xfs.FS
+	fsys afero.Fs
 	stat *statResultValue
 	dir  string
 	name string

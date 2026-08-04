@@ -181,7 +181,7 @@ func (g moduleImplementation) listdir(thread *starlark.Thread, directory string)
 	if directory == "" {
 		directory = "."
 	}
-	value, err := g.callOS(thread, "listdir", starlark.String(directory))
+	value, err := g.callOS(thread, "listdir", starlark.String(lookupPath(directory)))
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (g moduleImplementation) pathTest(thread *starlark.Thread, name, pathname s
 	if err != nil {
 		return false, err
 	}
-	value, err := starlark.Call(thread, function, starlark.Tuple{starlark.String(pathname)}, nil)
+	value, err := starlark.Call(thread, function, starlark.Tuple{starlark.String(lookupPath(pathname))}, nil)
 	if err != nil {
 		return false, err
 	}
@@ -232,6 +232,16 @@ func (g moduleImplementation) callOS(thread *starlark.Thread, name string, args 
 		return nil, err
 	}
 	return starlark.Call(thread, function, starlark.Tuple(args), nil)
+}
+
+func lookupPath(pathname string) string {
+	for strings.HasPrefix(pathname, "./") {
+		pathname = strings.TrimLeft(pathname[2:], "/")
+	}
+	if pathname == "" {
+		return "."
+	}
+	return pathname
 }
 
 func escape(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {

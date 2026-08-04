@@ -30,7 +30,7 @@ The root `dyson.Stdlib` owner exposes only namespace symbols for stdlib modules 
 
 Prefer plain Starlark values (`None`, bool, int, float, string, bytes, tuple, list, dict, and set where supported) when a custom value is not required. Construct byte results through `internal/pybytes` so they remain native `starlark.Bytes` with Dyson's Python-compatible methods. Custom `starlark.Value` implementations are appropriate for real module-defined types such as compiled patterns, matches, response objects, open files, and tuple-like values.
 
-Global `open` handles belong to the per-session `FileRegistry`. Explicit file close must unregister them, while registry close must attempt every remaining handle and report joined errors. Descriptor-style handles from `os` and `tempfile` belong to the shared `xfs.FileDescriptors` table, which `Sphere.Close` also closes.
+Global `open` handles belong to the per-session `FileRegistry`. Explicit file close must unregister them, while registry close must attempt every remaining handle and report joined errors. Descriptor-style Afero files from `os` and `tempfile` belong to the shared `stdlibfs.FileDescriptors` table, which `Sphere.Close` also closes.
 
 Text files maintain `bufferedCharacters` incrementally for every decoded chunk, including read-to-EOF operations. Do not skip accounting on the assumption that a read will succeed; I/O and decoder errors must leave already buffered text usable by later reads.
 

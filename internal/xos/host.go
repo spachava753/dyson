@@ -120,24 +120,6 @@ type Platformer interface {
 	Platform() Platform
 }
 
-// PortablePlatform is used when no host platform is configured. It is sufficient
-// for contained filesystems that do not expose descriptor-style host I/O.
-var PortablePlatform = Platform{
-	OSName:            "posix",
-	PathListSeparator: ":",
-	DevNull:           "/dev/null",
-	OpenFlags: OpenFlags{
-		ReadOnly:  0,
-		WriteOnly: 1,
-		ReadWrite: 2,
-		Append:    0x400,
-		Create:    0x40,
-		Exclusive: 0x80,
-		Sync:      0x101000,
-		Truncate:  0x200,
-	},
-}
-
 // Host exposes host OS environment, process, working-directory, and platform behavior.
 type Host struct{}
 

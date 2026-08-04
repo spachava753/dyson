@@ -11,41 +11,65 @@ import (
 
 	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson"
+	"github.com/spf13/afero"
 	"go.starlark.net/starlark"
 )
 
 type trackedReadFile struct {
-	*strings.Reader
+	afero.File
 	closeCalls int
 	closeErr   error
 }
 
 func (f *trackedReadFile) Close() error {
 	f.closeCalls++
-	return f.closeErr
+	return errors.Join(f.closeErr, f.File.Close())
 }
-func (*trackedReadFile) Write(data []byte) (int, error) { return len(data), nil }
-func (*trackedReadFile) Sync() error                    { return nil }
-func (*trackedReadFile) Truncate(int64) error           { return nil }
 
 type trackingReadFS struct {
+	afero.Fs
 	files       []*trackedReadFile
 	closeErrors map[string]error
 }
 
-func (*trackingReadFS) ReadDir(string) ([]fs.DirEntry, error) { return nil, fs.ErrInvalid }
-func (*trackingReadFS) Stat(string) (fs.FileInfo, error)      { return nil, fs.ErrInvalid }
-func (*trackingReadFS) Lstat(string) (fs.FileInfo, error)     { return nil, fs.ErrInvalid }
-func (f *trackingReadFS) OpenRead(name string) (dyson.ReadFile, error) {
-	return f.open(name), nil
+func (f *trackingReadFS) Open(name string) (afero.File, error) {
+	backing, err := f.prepare(name)
+	if err != nil {
+		return nil, err
+	}
+	file, err := backing.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return f.track(name, file), nil
 }
-func (f *trackingReadFS) OpenFile(name string, _ int, _ fs.FileMode) (dyson.File, error) {
-	return f.open(name), nil
+
+func (f *trackingReadFS) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	backing, err := f.prepare(name)
+	if err != nil {
+		return nil, err
+	}
+	file, err := backing.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return f.track(name, file), nil
 }
-func (f *trackingReadFS) open(name string) *trackedReadFile {
-	file := &trackedReadFile{Reader: strings.NewReader(name), closeErr: f.closeErrors[name]}
-	f.files = append(f.files, file)
-	return file
+
+func (f *trackingReadFS) prepare(name string) (afero.Fs, error) {
+	if f.Fs == nil {
+		f.Fs = afero.NewMemMapFs()
+	}
+	if err := afero.WriteFile(f.Fs, name, []byte(name), 0o600); err != nil {
+		return nil, err
+	}
+	return f.Fs, nil
+}
+
+func (f *trackingReadFS) track(name string, file afero.File) afero.File {
+	tracked := &trackedReadFile{File: file, closeErr: f.closeErrors[name]}
+	f.files = append(f.files, tracked)
+	return tracked
 }
 
 func TestOpenRejectsDirectory(t *testing.T) {

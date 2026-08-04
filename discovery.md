@@ -17,7 +17,15 @@
 - The pinned Starlark runtime exposes no public seam for extending native bytes methods; `internal/pybytes` registers `decode` through the runtime's internal method table so Dyson results remain exact `starlark.Bytes` values
 - Open file values can persist in REPL globals across successful chunks; terminal `Sphere.Close` closes both the per-session global-file registry and the descriptor table shared by `os` and `tempfile`
 - `NewSphere` installs only explicit `SphereSource` values; unknown load names do not fall back to the ambient filesystem
-- `ReadFileSystem.OpenRead` and `ReadFile.Read` use ordinary synchronous I/O; file operations intentionally do not receive the active `Eval` context, and both `HostFS` and `IOFS` implement the capability directly
+- Global `open` and descriptor operations use ordinary synchronous `afero.File` I/O; file operations intentionally do not receive the active `Eval` context, and callers can supply any `afero.Fs` directly
+- Standard `io/fs.FS` values use `dyson.FromIOFS`, a read-only Afero adapter that preserves leading `./` path behavior and source-level `fs.ReadDirFS`, validates descriptor flags, and delegates strict link operations to `fs.ReadLinkFS`; bare `afero.FromIOFS.OpenFile` ignores flags
+- CPython's `lstat` never follows links: symlink-sensitive Dyson operations require `afero.Lstater` to report `usedLstat=true` and return unsupported rather than accepting a `Stat` fallback
+- Host directory enumeration uses `os.ReadDir` so `listdir`, `scandir`, `walk`, and `glob` receive names and `DirEntry` types without forcing a per-child `lstat`; other Afero backends retain direct-`ReadDir` or file-based fallback behavior
+- Host `os.truncate(path, size)` uses path-based `os.Truncate` instead of opening the target; generic Afero backends retain an open-handle fallback
+- CPython `os.walk` lists symlinks to directories in `dirnames` but recurses into them only with `followlinks=True`
+- CPython temporary creation combines `O_RDWR|O_CREAT|O_EXCL` with `O_NOFOLLOW` where available; Go needs no separate `O_BINARY` because its files have no text-mode translation
+- CPython `os.path.realpath(..., strict=False)` resolves links through dangling targets and tolerates missing suffixes instead of requiring the complete path to exist
+- CPython `shutil.rmtree` rejects a symbolic link at the root; Dyson then delegates descendant removal and its symlink-attack resistance to the configured `afero.Fs`
 - Global `open` rejects an empty filename before adapter path normalization, and read adapters reject directories before returning a file value
 - Binary `file.read(size)` accepts `None`, `-1`, or a non-negative byte count; unlike text streams, other negative sizes are errors
 - CPython UTF-8 replacement consumes a valid multibyte prefix up to, but not including, a malformed continuation; semantically invalid second bytes invalidate only the lead byte

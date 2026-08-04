@@ -1,7 +1,7 @@
 # Tests for Dyson's Python-like os compatibility module.
 #
 # These chunks cover the source-backed module shape, deterministic Starlark path
-# helpers, and read-only primitives that work against the test xfs.IOFS.
+# helpers, and read-only primitives backed by an Afero filesystem.
 
 ---
 # The module exposes the public os namespace and nested os.path namespace.
@@ -25,8 +25,8 @@ assert.eq(os.W_OK, 2)
 assert.eq(os.X_OK, 1)
 
 ---
-# Basic filesystem primitives use the injected xfs policy for directory listing
-# and path existence/type checks.
+# Basic filesystem primitives use the injected Afero filesystem for directory
+# listing and path existence/type checks.
 load("assert.star", "assert")
 load("os.star", "os")
 
@@ -43,7 +43,7 @@ assert.eq(os.path.isdir(sibling_dir), True)
 
 ---
 # Read-only filesystem primitives expose stat results, directory entries, and
-# walk output through the injected xfs policy.
+# walk output through the injected Afero filesystem.
 load("assert.star", "assert")
 load("os.star", "os")
 
@@ -113,7 +113,7 @@ assert.eq(os.path.commonpath(["a/b/c", "a/b/d"]), "a/b")
 assert.eq(os.path.commonpath(["/a/b", "/a/c"]), "/a")
 
 ---
-# Missing non-filesystem domains fail explicitly when only an xfs filesystem is configured.
+# Missing non-filesystem domains fail explicitly when only a filesystem is configured.
 load("assert.star", "assert")
 load("os.star", "os")
 
@@ -127,11 +127,13 @@ load("os.star", "os")
 os.system("echo hidden")  ### "os.system: subprocess execution is not configured"
 
 ---
-# Descriptor-style file I/O requires an xfs.OpenFS implementation.
+# Descriptor-style reads use afero.Fs.OpenFile, including read-only handles.
 load("assert.star", "assert")
 load("os.star", "os")
 
-os.open("file.txt", os.O_RDONLY)  ### "os.open: filesystem does not support file descriptors"
+fd = os.open("file.txt", os.O_RDONLY)
+assert.eq(os.read(fd, 7), b"content")
+os.close(fd)
 
 ---
 # Working-directory operations are separate from contained filesystem access.
