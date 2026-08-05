@@ -2,12 +2,14 @@ package dyson_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"testing/synctest"
 	"time"
 
 	"github.com/nalgeon/be"
@@ -378,12 +380,13 @@ subprocess.run(["should-not-run"])
 
 type blockingCommandRunner struct {
 	started chan struct{}
+	result  dyson.CommandResult
 }
 
 func (r blockingCommandRunner) RunCommand(ctx context.Context, command dyson.Command) (dyson.CommandResult, error) {
 	close(r.started)
 	<-ctx.Done()
-	return dyson.CommandResult{}, ctx.Err()
+	return r.result, ctx.Err()
 }
 
 func TestEvalCancellationStopsConfiguredCommand(t *testing.T) {
@@ -411,6 +414,34 @@ subprocess.run(["block"])
 	case <-time.After(time.Second):
 		t.Fatal("Eval did not stop the active command")
 	}
+}
+
+func TestEvalReturnsSubprocessTimeoutDetails(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		runner := blockingCommandRunner{
+			started: make(chan struct{}),
+			result: dyson.CommandResult{
+				Stdout: []byte("partial stdout"),
+				Stderr: []byte("partial stderr"),
+			},
+		}
+		sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.StdlibConfig{
+			CommandRunner: runner,
+		}))
+
+		err := sphere.Eval(t.Context(), `
+load("subprocess.star", "subprocess")
+subprocess.run(["block"], capture_output=True, text=True, timeout=0.25)
+`)
+		timeoutErr, ok := errors.AsType[*dyson.SubprocessTimeoutExpiredError](err)
+		if !ok {
+			t.Fatalf("Eval() error = %T %v, want *dyson.SubprocessTimeoutExpiredError", err, err)
+		}
+		be.Equal(t, timeoutErr.Cmd.String(), `["block"]`)
+		be.Equal(t, timeoutErr.Timeout.String(), "0.25")
+		be.Equal(t, string(timeoutErr.Stdout), "partial stdout")
+		be.Equal(t, string(timeoutErr.Stderr), "partial stderr")
+	})
 }
 
 func TestStdlibUsesConfiguredCommandRunner(t *testing.T) {

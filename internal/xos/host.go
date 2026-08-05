@@ -1,10 +1,8 @@
 package xos
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,7 +64,8 @@ const (
 	StreamStdout
 )
 
-// CommandResult is the completed result of a subprocess execution.
+// CommandResult is the completed result of a subprocess execution. When
+// execution is canceled, Stdout and Stderr may contain partial captured output.
 type CommandResult struct {
 	ReturnCode int
 	Stdout     []byte
@@ -74,6 +73,8 @@ type CommandResult struct {
 }
 
 // CommandRunner executes subprocess requests and must honor context cancellation.
+// On cancellation, implementations should return already captured output in the
+// CommandResult together with the context error.
 type CommandRunner interface {
 	RunCommand(ctx context.Context, command Command) (CommandResult, error)
 }
@@ -204,53 +205,40 @@ func (Host) RunCommand(ctx context.Context, command Command) (CommandResult, err
 	if command.Env != nil {
 		cmd.Env = command.Env
 	}
-	if command.Input != nil {
-		cmd.Stdin = bytes.NewReader(command.Input)
-	} else {
-		switch command.Stdin {
-		case StreamDiscard, StreamPipe:
-			cmd.Stdin = bytes.NewReader(nil)
-		default:
-			cmd.Stdin = os.Stdin
-		}
+	streams, err := prepareCommandIO(cmd, command)
+	if err != nil {
+		return CommandResult{}, err
 	}
-
-	var stdout, stderr bytes.Buffer
-	switch command.Stdout {
-	case StreamPipe:
-		cmd.Stdout = &stdout
-	case StreamDiscard:
-		cmd.Stdout = io.Discard
-	default:
-		cmd.Stdout = os.Stdout
-	}
-	switch command.Stderr {
-	case StreamPipe:
-		cmd.Stderr = &stderr
-	case StreamDiscard:
-		cmd.Stderr = io.Discard
-	case StreamStdout:
-		cmd.Stderr = cmd.Stdout
-	default:
-		cmd.Stderr = os.Stderr
-	}
-
-	result := CommandResult{}
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		streams.closeAll()
 		if ctx.Err() != nil {
 			return CommandResult{}, ctx.Err()
 		}
-		if exit, ok := err.(*exec.ExitError); ok {
+		return CommandResult{}, err
+	}
+	streams.start()
+	waitErr := cmd.Wait()
+	streamErr, streamCanceled := streams.wait(ctx)
+	result := CommandResult{}
+	if streams.stdout != nil {
+		result.Stdout = streams.stdout.buffer.Bytes()
+	}
+	if streams.stderr != nil {
+		result.Stderr = streams.stderr.buffer.Bytes()
+	}
+	if ctx.Err() != nil && (waitErr != nil || streamCanceled) {
+		return result, ctx.Err()
+	}
+
+	if waitErr != nil {
+		if exit, ok := waitErr.(*exec.ExitError); ok {
 			result.ReturnCode = exit.ExitCode()
 		} else {
-			return CommandResult{}, err
+			return CommandResult{}, waitErr
 		}
 	}
-	if command.Stdout == StreamPipe {
-		result.Stdout = stdout.Bytes()
-	}
-	if command.Stderr == StreamPipe {
-		result.Stderr = stderr.Bytes()
+	if streamErr != nil {
+		return CommandResult{}, streamErr
 	}
 	return result, nil
 }

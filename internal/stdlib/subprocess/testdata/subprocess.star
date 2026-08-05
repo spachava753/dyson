@@ -123,7 +123,15 @@ load("subprocess.star", "subprocess")
 subprocess.run(["echo"], stdin=123)  ### "subprocess.run: stdin must be PIPE, DEVNULL, or None"
 
 ---
-# Timeout handling is intentionally unsupported until command cancellation exists.
+# A timeout permits commands that complete before its deadline.
+load("assert.star", "assert")
 load("subprocess.star", "subprocess")
 
-subprocess.run(["echo"], timeout=1)  ### "subprocess.run: timeout is not supported"
+completed = subprocess.run(["echo", "timed"], timeout=1, capture_output=True)
+assert.eq(completed.stdout, b"argv:echo|timed\n")
+
+---
+# Timeout values must be finite numeric seconds or None.
+load("subprocess.star", "subprocess")
+
+subprocess.run(["echo"], timeout="soon")  ### "subprocess.run: timeout: must be a finite number of seconds or None"

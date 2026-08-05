@@ -2,8 +2,11 @@ package subprocess
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"strings"
+	"time"
 
 	"github.com/spachava753/dyson/internal/pybytes"
 	"github.com/spachava753/dyson/internal/xctx"
@@ -20,6 +23,8 @@ const (
 	stdoutValue  = -2
 	devnullValue = -3
 )
+
+var errCommandTimeout = errors.New("subprocess command timeout")
 
 // Module is the default fail-closed Starlark module namespace exposed by
 // load("subprocess.star", "subprocess"). Use MakeModule with an explicit
@@ -46,8 +51,8 @@ func MakeModule(runner xos.CommandRunner) *starlarkstruct.Module {
 }
 
 // runBuiltin returns subprocess.run backed by runner. It validates the supported
-// Python arguments, resolves stream and text modes, executes with the active
-// context, and shapes captured output into a CompletedProcess value.
+// Python arguments, derives an optional timeout from the active context, resolves
+// stream and text modes, and shapes captured output into a CompletedProcess value.
 func runBuiltin(runner xos.CommandRunner) func(*starlark.Thread, *starlark.Builtin, starlark.Tuple, []starlark.Tuple) (starlark.Value, error) {
 	return func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		var argv starlark.Value
@@ -81,8 +86,9 @@ func runBuiltin(runner xos.CommandRunner) func(*starlark.Thread, *starlark.Built
 		); err != nil {
 			return nil, err
 		}
-		if timeout != starlark.None {
-			return nil, fmt.Errorf("%s: timeout is not supported", fn.Name())
+		timeoutDuration, hasTimeout, err := parseTimeout(timeout)
+		if err != nil {
+			return nil, fmt.Errorf("%s: timeout: %w", fn.Name(), err)
 		}
 		if encoding != starlark.None {
 			text = true
@@ -131,7 +137,13 @@ func runBuiltin(runner xos.CommandRunner) func(*starlark.Thread, *starlark.Built
 		if err != nil {
 			return nil, err
 		}
-		result, err := runCommand(threadContext(thread), fn.Name(), runner, xos.Command{
+		ctx := threadContext(thread)
+		if hasTimeout {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeoutCause(ctx, timeoutDuration, errCommandTimeout)
+			defer cancel()
+		}
+		result, err := runCommand(ctx, fn.Name(), runner, xos.Command{
 			Args:   command,
 			Shell:  shell,
 			Input:  inputBytes,
@@ -141,6 +153,17 @@ func runBuiltin(runner xos.CommandRunner) func(*starlark.Thread, *starlark.Built
 			Stdout: stdoutMode,
 			Stderr: stderrMode,
 		})
+		timeoutExpired := hasTimeout && errors.Is(context.Cause(ctx), errCommandTimeout)
+		if timeoutExpired {
+			return nil, newTimeoutExpiredError(
+				argv,
+				timeout,
+				result.Stdout,
+				result.Stderr,
+				stdoutMode == xos.StreamPipe,
+				stderrMode == xos.StreamPipe,
+			)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -224,6 +247,39 @@ func threadContext(thread *starlark.Thread) context.Context {
 		return ctx
 	}
 	return context.Background()
+}
+
+func parseTimeout(value starlark.Value) (time.Duration, bool, error) {
+	if value == starlark.None {
+		return 0, false, nil
+	}
+	if integer, ok := value.(starlark.Int); ok {
+		if integer.Sign() <= 0 {
+			return 0, true, nil
+		}
+		seconds, ok := integer.Int64()
+		maxSeconds := int64((time.Duration(1<<63 - 1)) / time.Second)
+		if !ok || seconds > maxSeconds {
+			return 0, false, fmt.Errorf("must fit in a time.Duration")
+		}
+		return time.Duration(seconds) * time.Second, true, nil
+	}
+	float, ok := value.(starlark.Float)
+	if !ok {
+		return 0, false, fmt.Errorf("must be a finite number of seconds or None")
+	}
+	seconds := float64(float)
+	if math.IsInf(seconds, 0) || math.IsNaN(seconds) {
+		return 0, false, fmt.Errorf("must be a finite number of seconds or None")
+	}
+	if seconds <= 0 {
+		return 0, true, nil
+	}
+	nanoseconds := seconds * float64(time.Second)
+	if nanoseconds >= float64(uint64(1)<<63) {
+		return 0, false, fmt.Errorf("must fit in a time.Duration")
+	}
+	return time.Duration(nanoseconds), true, nil
 }
 
 func commandArgs(fn string, val starlark.Value, shell bool) ([]string, error) {

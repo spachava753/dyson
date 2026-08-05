@@ -84,6 +84,22 @@ sphere := dyson.NewSphere(print, dyson.NewStdlib(config))
 
 `HostCommandRunner` uses context-aware host commands, and `HostHTTPClient` attaches the evaluation context to each request. Canceling `Sphere.Eval` can therefore terminate either active operation.
 
+### Subprocess execution
+
+`subprocess.run` accepts `timeout` as finite integer or floating-point seconds. Positive values must fit within Go's `time.Duration` range, which is approximately 292 years; `None` leaves the evaluation context unchanged, while zero and negative values create an immediate timeout. The timeout is applied only around command execution, after argument validation:
+
+```python
+load("subprocess.star", "subprocess")
+
+completed = subprocess.run(
+    ["tool", "argument"],
+    capture_output=True,
+    timeout=5,
+)
+```
+
+Dyson derives a child context for the timeout, so an earlier `Sphere.Eval` cancellation remains distinguishable from a command-local deadline. Expiration aborts evaluation with a `*dyson.SubprocessTimeoutExpiredError` whose message is such as `subprocess.run: command timed out after 5 seconds`. Go callers can recover that typed cause through the Starlark evaluation wrapper with `errors.AsType`; its `Cmd` and `Timeout` fields retain the original Starlark arguments, while `Stdout` and `Stderr` contain partial captured bytes and remain bytes even when `text=True`. `HostCommandRunner` kills and waits for the host process through `exec.CommandContext`, then closes its controlled stdin and capture-pipe endpoints when the context ends so descendants cannot block timeout cleanup; successful commands with an active context still finish input delivery and drain captured output to EOF. Custom `CommandRunner` implementations must likewise stop promptly when the supplied context ends and should return any already captured output together with the context error.
+
 ### Capability mapping
 
 | Configuration field | Consumers | Zero-value behavior |

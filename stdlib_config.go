@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 
+	stdlibsubprocess "github.com/spachava753/dyson/internal/stdlib/subprocess"
 	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xhttp"
 	"github.com/spachava753/dyson/internal/xos"
@@ -50,11 +51,18 @@ const (
 	StreamStdout = xos.StreamStdout
 )
 
-// CommandResult is the completed result of a subprocess execution.
+// CommandResult is the completed result of a subprocess execution. When
+// execution is canceled, Stdout and Stderr may contain partial captured output.
 type CommandResult = xos.CommandResult
 
+// SubprocessTimeoutExpiredError reports that subprocess.run exceeded its
+// timeout. It is wrapped by the Starlark evaluation error returned from Eval.
+type SubprocessTimeoutExpiredError = stdlibsubprocess.TimeoutExpiredError
+
 // CommandRunner executes normalized subprocess requests and must honor context
-// cancellation. See Command.Dir for HostStdlibConfig's default-directory rule.
+// cancellation. On cancellation, implementations should return already captured
+// output in CommandResult together with the context error. See Command.Dir for
+// HostStdlibConfig's default-directory rule.
 type CommandRunner = xos.CommandRunner
 
 // HTTPRequest is the normalized request passed to an HTTPClient.

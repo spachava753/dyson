@@ -13,7 +13,7 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 - `internal/stdlibfs/` owns the concrete rooted Afero host backend, the read-only `io/fs` adapter, shared Afero helpers, and the descriptor table closed by `Sphere.Close`. `StdlibConfig.FS` is directly `afero.Fs`; do not introduce a second filesystem interface. Keep environment, process, and platform concerns out of this package.
 - `internal/xhttp/` owns the normalized HTTP client seam and explicit host-network adapter used by stdlib modules. Keep protocol-independent network policy out of stdlib package implementations.
 - `internal/xos/` owns host OS seams that are not filesystem- or network-specific, such as environment, process, command execution, working-directory, and platform capabilities.
-- The root package uses Afero directly for `StdlibConfig.FS` and aliases the `xhttp` and `xos` seams needed by the remaining configuration fields.
+- The root package uses Afero directly for `StdlibConfig.FS`, aliases the `xhttp` and `xos` seams needed by the remaining configuration fields, and aliases the structured subprocess timeout error so callers can recover partial output from `Sphere.Eval` errors.
 - `discovery.md` is informal design/research notes. Update it when learning important Starlark behavior that affects `dyson` design.
 
 ## Go Conventions
