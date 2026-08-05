@@ -277,14 +277,7 @@ type Usage struct {
 
 // DiskUsage returns host filesystem capacity around name.
 func (h Host) DiskUsage(name string) (Usage, error) {
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(h.resolve(name), &stat); err != nil {
-		return Usage{}, err
-	}
-	blockSize := uint64(stat.Bsize)
-	total := stat.Blocks * blockSize
-	free := stat.Bavail * blockSize
-	return Usage{Total: total, Used: total - free, Free: free}, nil
+	return diskUsage(h.resolve(name))
 }
 
 func (h Host) resolve(name string) string {

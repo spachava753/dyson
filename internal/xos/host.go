@@ -173,7 +173,7 @@ func (Host) Getegid() int { return os.Getegid() }
 func (Host) Getgroups() ([]int, error) { return os.Getgroups() }
 
 // Umask changes the host process umask and returns the previous value.
-func (Host) Umask(mask int) int { return syscall.Umask(mask) }
+func (Host) Umask(mask int) int { return hostUmask(mask) }
 
 // RunCommand executes a host subprocess and captures requested streams.
 func (Host) RunCommand(ctx context.Context, command Command) (CommandResult, error) {
