@@ -123,6 +123,17 @@ func (s *Sphere) Close() error {
 	return errors.Join(closeErrors...)
 }
 
+// EvaluationContext returns the context supplied to the Sphere.Eval call
+// currently executing on thread. It returns context.Background when thread is
+// nil or is not managed by a Sphere. Builtins must not retain the returned
+// context beyond the current call.
+func EvaluationContext(thread *starlark.Thread) context.Context {
+	if ctx := xctx.FromLocal(thread); ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
 // Eval executes one Starlark REPL chunk. If ctx ends during execution, Eval
 // cancels the Starlark thread; each call clears cancellation left by a previous
 // evaluation. Eval waits for its cancellation callback to stop before returning

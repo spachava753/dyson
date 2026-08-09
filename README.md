@@ -51,6 +51,8 @@ Sources are merged in order, and later sources replace modules or globals with m
 
 The public interfaces use standard Go types where possible. `CommandRunner` receives a `context.Context` plus Dyson's public `Command` and returns `CommandResult`, allowing fakes and policy adapters to inspect or reject normalized command requests. Implementations must stop promptly when the context ends.
 
+Custom builtins can call `dyson.EvaluationContext(thread)` with their `*starlark.Thread` argument to obtain the context passed to the current `Sphere.Eval` call. The accessor returns `context.Background()` when the thread is not managed by a Sphere. Builtins should honor cancellation and must not retain the context beyond the current call.
+
 Callers that provide their own Starlark thread and loader use the same owned standard library directly:
 
 ```go

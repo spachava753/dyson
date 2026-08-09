@@ -6,7 +6,7 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 
 ## Project Structure
 
-- `eval.go` owns the incremental Starlark session, explicit `SphereSource` composition, globals, exact module loading without ambient fallback, evaluation cancellation, and terminal `Sphere.Close` cleanup.
+- `eval.go` owns the incremental Starlark session, explicit `SphereSource` composition, globals, exact module loading without ambient fallback, evaluation-context propagation and public lookup, evaluation cancellation, and terminal `Sphere.Close` cleanup.
 - `stdlib.go` owns the closable `Stdlib` assembled for `Sphere` and for callers using their own Starlark thread and loader.
 - `internal/pybytes/` owns Python-compatible methods added to native Starlark bytes. It intentionally depends on the pinned Starlark runtime's internal bytes method table because the runtime has no public extension seam.
 - `internal/stdlib/builtins/` owns Python-inspired globals such as `open` and the registry of live global file handles. Explicit `file.close()` unregisters a handle; `Sphere.Close` closes whatever remains.
