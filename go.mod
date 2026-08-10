@@ -11,3 +11,5 @@ require (
 )
 
 require golang.org/x/text v0.38.0 // indirect
+
+replace go.starlark.net => github.com/spachava753/starlarkx v0.0.0-20260810013711-243e6013254e
