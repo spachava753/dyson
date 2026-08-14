@@ -11,10 +11,9 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/spachava753/dyson/internal/pybytes"
 	"github.com/spachava753/dyson/internal/xhttp"
-	starlarkjson "go.starlark.net/lib/json"
-	"go.starlark.net/starlark"
+	starlarkjson "github.com/spachava753/starlarkx/lib/json"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 const responseTypeName = "requests.Response"
@@ -53,7 +52,7 @@ func responseValueFromHTTP(response xhttp.Response, history *starlark.List) *res
 	value := &responseValue{
 		statusCode: response.StatusCode,
 		headers:    headers,
-		content:    pybytes.New(response.Body),
+		content:    starlark.Bytes(string(response.Body)),
 		url:        response.URL,
 		reason:     response.Reason,
 		encoding:   starlark.None,

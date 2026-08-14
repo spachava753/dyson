@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
-	"go.starlark.net/syntax"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
+	"github.com/spachava753/starlarkx/syntax"
 )
 
 // ModuleName is the Starlark stdlib module name for Dyson's signal compatibility module.

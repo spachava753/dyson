@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/spachava753/dyson/internal/xctx"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 // compile implements the Starlark re.compile builtin, returning a compiled

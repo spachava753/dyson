@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/spachava753/dyson/internal/xctx"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 // String returns a Python-like representation of the compiled pattern value.

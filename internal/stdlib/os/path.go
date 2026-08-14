@@ -5,8 +5,8 @@ import (
 	pathpkg "path"
 	"strings"
 
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
 )
 
 func makePathModule(primitives *starlarkstruct.Module) *starlarkstruct.Module {

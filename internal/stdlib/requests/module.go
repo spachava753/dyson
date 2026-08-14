@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/spachava753/dyson/internal/xhttp"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
 )
 
 // ModuleName is the Starlark stdlib module name for Dyson's requests compatibility module.

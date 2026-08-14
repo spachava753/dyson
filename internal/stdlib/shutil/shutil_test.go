@@ -11,10 +11,10 @@ import (
 	"github.com/spachava753/dyson/internal/chunkedfile"
 	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
 	"github.com/spachava753/dyson/internal/stdlibfs"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarktest"
+	"github.com/spachava753/starlarkx/syntax"
 	"github.com/spf13/afero"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarktest"
-	"go.starlark.net/syntax"
 )
 
 type openFSWithoutIdentity struct {

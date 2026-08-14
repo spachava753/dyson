@@ -1,8 +1,8 @@
 package re
 
 import (
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
 )
 
 // ModuleName is the Python-compatible name of the regular-expression module.

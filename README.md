@@ -149,7 +149,7 @@ Native bytes returned by `open`, `os.read`, HTTP responses, subprocess output, r
 text = data.decode("utf-8", errors="strict")
 ```
 
-`bytes.decode` supports UTF-8, ASCII, and Latin-1, including common aliases. Its `errors` argument supports `"strict"` (the default), `"ignore"`, and `"replace"`. Unsupported modes, encodings, error handlers, empty or missing paths, directory paths, and reads from closed files fail with operation and path context where applicable. Empty filenames fail before filesystem-specific root normalization.
+`bytes.decode` is provided natively by StarlarkX. It supports UTF-8 and its common aliases; `errors` supports `"strict"` (the default), `"ignore"`, and `"replace"` for malformed input. Unsupported modes, encodings, error handlers encountered during decoding, empty or missing paths, directory paths, and reads from closed files fail with operation and path context where applicable. Empty filenames fail before filesystem-specific root normalization.
 
 ### HTTP requests
 

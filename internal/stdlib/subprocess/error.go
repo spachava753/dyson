@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 // TimeoutExpiredError reports that subprocess.run exceeded its timeout.

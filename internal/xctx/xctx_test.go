@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/nalgeon/be"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 type contextKey struct{}

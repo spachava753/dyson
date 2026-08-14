@@ -4,9 +4,9 @@ import (
 	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
 	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xos"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
 	"github.com/spf13/afero"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 )
 
 // ModuleName is the Starlark stdlib module name for Dyson's shutil compatibility module.

@@ -11,12 +11,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/spachava753/dyson/internal/pybytes"
 	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xos"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
 	"github.com/spf13/afero"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
 )
 
 // ModuleName is the Starlark stdlib module name for Dyson's tempfile compatibility module.
@@ -102,7 +101,7 @@ func gettempprefixb(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 	if err := starlark.UnpackArgs(fn.Name(), args, kwargs); err != nil {
 		return nil, err
 	}
-	return pybytes.NewString(template), nil
+	return starlark.Bytes(template), nil
 }
 
 func (m *moduleState) gettempdir(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -124,7 +123,7 @@ func (m *moduleState) gettempdirb(thread *starlark.Thread, fn *starlark.Builtin,
 	if err != nil {
 		return nil, err
 	}
-	return pybytes.NewString(dir), nil
+	return starlark.Bytes(dir), nil
 }
 
 func (m *moduleState) mkdtemp(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {

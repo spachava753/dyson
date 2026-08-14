@@ -2,8 +2,8 @@ package glob
 
 import (
 	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
 )
 
 // ModuleName is the Starlark stdlib module name for Dyson's glob compatibility module.

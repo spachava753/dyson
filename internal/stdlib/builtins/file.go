@@ -7,10 +7,9 @@ import (
 	"io/fs"
 	"unicode/utf8"
 
-	"github.com/spachava753/dyson/internal/pybytes"
 	"github.com/spachava753/dyson/internal/stdlibfs"
+	"github.com/spachava753/starlarkx/starlark"
 	"github.com/spf13/afero"
-	"go.starlark.net/starlark"
 )
 
 var fileMethods = map[string]*starlark.Builtin{
@@ -150,10 +149,10 @@ func (f *FileRegistry) open(_ *starlark.Thread, fn *starlark.Builtin, args starl
 		}
 	}
 
-	var decoder *pybytes.Decoder
+	var decoder *textDecoder
 	if !binary {
 		var err error
-		decoder, err = pybytes.NewDecoder(encoding, errors)
+		decoder, err = newTextDecoder(encoding, errors)
 		if err != nil {
 			return nil, fmt.Errorf("%s(%q): %w", fn.Name(), path, err)
 		}
@@ -192,7 +191,7 @@ type fileValue struct {
 	path               string
 	mode               string
 	binary             bool
-	decoder            *pybytes.Decoder
+	decoder            *textDecoder
 	universalNewlines  bool
 	skipLF             bool
 	closed             bool
@@ -267,7 +266,7 @@ func fileRead(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwa
 	}
 	if size == 0 {
 		if file.binary {
-			return pybytes.New(nil), nil
+			return starlark.Bytes(""), nil
 		}
 		return starlark.String(""), nil
 	}
@@ -280,7 +279,7 @@ func fileRead(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwa
 		if err != nil {
 			return nil, fmt.Errorf("%s: %q: %w", fn.Name(), file.path, err)
 		}
-		return pybytes.New(content), nil
+		return starlark.Bytes(string(content)), nil
 	}
 
 	if err := file.fillText(size); err != nil {
@@ -304,7 +303,7 @@ func (f *fileValue) fillText(size int64) error {
 		chunkSize := maxChunk
 		if size >= 0 {
 			remaining := size - buffered
-			maxWidth := int64(f.decoder.MaxBytesPerCharacter())
+			maxWidth := int64(f.decoder.maxBytesPerCharacter())
 			if remaining <= int64(maxChunk)/maxWidth {
 				chunkSize = int(remaining * maxWidth)
 			}
@@ -312,7 +311,7 @@ func (f *fileValue) fillText(size int64) error {
 		buffer := make([]byte, chunkSize)
 		n, readErr := f.file.Read(buffer)
 		if n > 0 {
-			decoded, err := f.decoder.Decode(buffer[:n], false)
+			decoded, err := f.decoder.decode(buffer[:n], false)
 			if err != nil {
 				return err
 			}
@@ -330,7 +329,7 @@ func (f *fileValue) fillText(size int64) error {
 		if readErr != io.EOF {
 			return readErr
 		}
-		decoded, err := f.decoder.Decode(nil, true)
+		decoded, err := f.decoder.decode(nil, true)
 		if err != nil {
 			return err
 		}

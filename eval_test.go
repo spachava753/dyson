@@ -7,7 +7,7 @@ import (
 	"testing/synctest"
 
 	"github.com/nalgeon/be"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 func TestEvalStopsWhenContextEnds(t *testing.T) {

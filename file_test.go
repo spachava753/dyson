@@ -11,8 +11,8 @@ import (
 
 	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson"
+	"github.com/spachava753/starlarkx/starlark"
 	"github.com/spf13/afero"
-	"go.starlark.net/starlark"
 )
 
 type trackedReadFile struct {
@@ -125,11 +125,6 @@ none_size_file = open("notes.txt")
 if none_size_file.read(None) != "h\u00e9llo":
     fail("None size did not read to EOF")
 none_size_file.close()
-
-latin_file = open("latin.txt", encoding="latin-1")
-if latin_file.read() != "caf\u00e9":
-    fail("explicit text encoding failed")
-latin_file.close()
 
 replacement_file = open("latin.txt", errors="replace")
 if replacement_file.read() != "caf\ufffd":
@@ -328,9 +323,9 @@ func TestOpenErrorsIncludeOperationAndPath(t *testing.T) {
 	}
 }
 
-func TestOSReadBytesSupportDecode(t *testing.T) {
+func TestOSReadBytesSupportNativeDecode(t *testing.T) {
 	root := t.TempDir()
-	be.Err(t, os.WriteFile(filepath.Join(root, "notes.txt"), []byte{'c', 'a', 'f', 0xe9}, 0o600), nil)
+	be.Err(t, os.WriteFile(filepath.Join(root, "notes.txt"), []byte{'c', 'a', 'f', 0xc3, 0xa9}, 0o600), nil)
 	sphere := dyson.NewSphere(nil, dyson.NewStdlib(dyson.HostStdlibConfig(root)))
 
 	be.Err(t, sphere.Eval(t.Context(), `
@@ -338,11 +333,7 @@ load("os.star", "os")
 fd = os.open("notes.txt", os.O_RDONLY)
 data = os.read(fd, 100000)
 os.close(fd)
-if data.decode("latin-1") != "caf\u00e9":
-    fail("latin-1 decode failed")
-if data.decode("ascii", "ignore") != "caf":
-    fail("ascii ignore decode failed")
-if data.decode(encoding="ascii", errors="replace") != "caf\ufffd":
-    fail("ascii replacement decode failed")
+if data.decode() != "caf\u00e9":
+    fail("native UTF-8 decode failed")
 `), nil)
 }

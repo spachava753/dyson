@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
 )
 
 type moduleImplementation struct {

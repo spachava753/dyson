@@ -28,7 +28,7 @@ The root `dyson.Stdlib` owner exposes only namespace symbols for stdlib modules 
 
 ## Runtime Values
 
-Prefer plain Starlark values (`None`, bool, int, float, string, bytes, tuple, list, dict, and set where supported) when a custom value is not required. Construct byte results through `internal/pybytes` so they remain native `starlark.Bytes` with Dyson's Python-compatible methods. Custom `starlark.Value` implementations are appropriate for real module-defined types such as compiled patterns, matches, response objects, open files, and tuple-like values.
+Prefer plain Starlark values (`None`, bool, int, float, string, bytes, tuple, list, dict, and set where supported) when a custom value is not required. Construct byte results directly as native `starlark.Bytes`; Python-compatible native methods are supplied by the pinned StarlarkX runtime. Custom `starlark.Value` implementations are appropriate for real module-defined types such as compiled patterns, matches, response objects, open files, and tuple-like values.
 
 Global `open` handles belong to the per-session `FileRegistry`. Explicit file close must unregister them, while registry close must attempt every remaining handle and report joined errors. Descriptor-style Afero files from `os` and `tempfile` belong to the shared `stdlibfs.FileDescriptors` table, which `Sphere.Close` also closes.
 
@@ -55,7 +55,7 @@ Prefer Starlark testdata for module behavior. Put user-visible compatibility sce
 
 Write behavior tests for the desired interface, not for temporary scaffold behavior. When adding a new module, it is correct and expected for broad compatibility testdata to be red until the implementation catches up. Do not make tests pass by asserting generic placeholder errors such as `"module.fn: not implemented"` for interfaces that are intended to be implemented. Only assert error behavior in testdata when the error is the intended public contract, such as an explicitly unsupported Python feature, invalid argument validation, platform/policy limitation, or resource/cancellation failure.
 
-Use focused chunks separated by `---` for Starlark testdata. Each chunk should cover one behavior area and include short comments explaining what is being verified. Use `go.starlark.net/starlarktest`'s `assert.star` helpers for in-script assertions, and prefer inline expected-error annotations such as `### "module.fn: message"` for intended failure cases when the local harness supports them.
+Use focused chunks separated by `---` for Starlark testdata. Each chunk should cover one behavior area and include short comments explaining what is being verified. Use `github.com/spachava753/starlarkx/starlarktest`'s `assert.star` helpers for in-script assertions, and prefer inline expected-error annotations such as `### "module.fn: message"` for intended failure cases when the local harness supports them.
 
 When adding broad compatibility for a module, favor many small Starlark examples over one large script that sets globals for Go to inspect. The test should read like executable documentation of the supported compatibility surface and its intentional divergences.
 

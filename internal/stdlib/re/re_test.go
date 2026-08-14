@@ -9,9 +9,9 @@ import (
 	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson/internal/chunkedfile"
 	"github.com/spachava753/dyson/internal/xctx"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarktest"
-	"go.starlark.net/syntax"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarktest"
+	"github.com/spachava753/starlarkx/syntax"
 )
 
 func TestReTestdata(t *testing.T) {

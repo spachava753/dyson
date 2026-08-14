@@ -7,7 +7,7 @@ import (
 
 	"github.com/spachava753/dyson/internal/xctx"
 	"github.com/spachava753/dyson/internal/xos"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 // Process implements process-related os module functions using explicit host capabilities.

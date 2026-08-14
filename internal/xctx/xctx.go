@@ -3,7 +3,7 @@ package xctx
 import (
 	"context"
 
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 const ctxKey = "dysonCtxKey"

@@ -15,8 +15,8 @@ import (
 
 	"github.com/spachava753/dyson/internal/xctx"
 	"github.com/spachava753/dyson/internal/xhttp"
-	starlarkjson "go.starlark.net/lib/json"
-	"go.starlark.net/starlark"
+	starlarkjson "github.com/spachava753/starlarkx/lib/json"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 // requestBuiltin returns the requests.request implementation. It validates and

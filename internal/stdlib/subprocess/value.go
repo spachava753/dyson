@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 const completedProcessTypeName = "subprocess.CompletedProcess"

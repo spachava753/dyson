@@ -11,8 +11,8 @@ import (
 
 	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson/internal/stdlibfs"
+	"github.com/spachava753/starlarkx/starlark"
 	"github.com/spf13/afero"
-	"go.starlark.net/starlark"
 )
 
 type countingFile struct {

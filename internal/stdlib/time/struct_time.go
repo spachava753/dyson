@@ -4,7 +4,7 @@ import (
 	"fmt"
 	gotime "time"
 
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 // structTime stores Python's nine struct_time fields in tuple order.

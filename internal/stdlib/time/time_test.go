@@ -8,9 +8,9 @@ import (
 
 	"github.com/spachava753/dyson/internal/chunkedfile"
 	"github.com/spachava753/dyson/internal/xos"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarktest"
-	"go.starlark.net/syntax"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarktest"
+	"github.com/spachava753/starlarkx/syntax"
 )
 
 func TestTimeTestdata(t *testing.T) {

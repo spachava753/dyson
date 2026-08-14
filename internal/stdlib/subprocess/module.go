@@ -8,11 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spachava753/dyson/internal/pybytes"
 	"github.com/spachava753/dyson/internal/xctx"
 	"github.com/spachava753/dyson/internal/xos"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
 )
 
 // ModuleName is the Starlark stdlib module name for Dyson's subprocess compatibility module.
@@ -407,5 +406,5 @@ func streamValue(data []byte, captured, text bool) starlark.Value {
 	if text {
 		return starlark.String(string(data))
 	}
-	return pybytes.New(data)
+	return starlark.Bytes(string(data))
 }

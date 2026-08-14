@@ -18,7 +18,7 @@ import (
 	stdlibtempfile "github.com/spachava753/dyson/internal/stdlib/tempfile"
 	stdlibtime "github.com/spachava753/dyson/internal/stdlib/time"
 	"github.com/spachava753/dyson/internal/stdlibfs"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 // Stdlib owns one configured standard library and its open host resources. It

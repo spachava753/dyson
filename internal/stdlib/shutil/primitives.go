@@ -11,10 +11,10 @@ import (
 
 	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xos"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
+	"github.com/spachava753/starlarkx/syntax"
 	"github.com/spf13/afero"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
-	"go.starlark.net/syntax"
 )
 
 const defaultSearchPath = "/bin:/usr/bin"

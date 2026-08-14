@@ -5,7 +5,7 @@ import (
 	"strings"
 	gotime "time"
 
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 // strftimeBuiltin implements time.strftime for the common format directives

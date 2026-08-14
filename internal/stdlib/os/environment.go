@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/spachava753/dyson/internal/xos"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 // Environment implements environment-related os module functions using explicit host capabilities.

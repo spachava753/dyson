@@ -14,7 +14,7 @@
 - Avoid error-as-control-flow APIs; make common failure states inspectable in Starlark
 - Starlark supports Python-style keyword-only function parameters after a bare `*`; use this when a compatibility surface must reject extra positional arguments
 - Host custom values can support attribute assignment through `starlark.HasSetField`; implementations must still reject writes after `Freeze()`
-- The pinned Starlark runtime exposes no public seam for extending native bytes methods; `internal/pybytes` registers `decode` through the runtime's internal method table so Dyson results remain exact `starlark.Bytes` values
+- The pinned StarlarkX runtime provides Python-compatible native methods such as `bytes.decode`, so Dyson can return exact `starlark.Bytes` values without patching private runtime method tables
 - Open file values can persist in REPL globals across successful chunks; terminal `Sphere.Close` closes both the per-session global-file registry and the descriptor table shared by `os` and `tempfile`
 - `NewSphere` installs only explicit `SphereSource` values; unknown load names do not fall back to the ambient filesystem
 - `subprocess.run(timeout=...)` derives a timeout-cause child context around command execution; that cause is authoritative after the runner returns, host commands close controlled stdin and capture-pipe endpoints only when their context ends, empty `PIPE` remains a real pipe, expected stdin `EPIPE` is ignored, already buffered output is returned alongside cancellation and retained as raw bytes in `SubprocessTimeoutExpiredError`, and earlier evaluation cancellation retains its original cause

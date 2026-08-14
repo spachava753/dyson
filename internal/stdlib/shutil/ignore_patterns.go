@@ -3,7 +3,7 @@ package shutil
 import (
 	"fmt"
 
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 const ignorePatternFuncName = ModuleName + ".ignore_patterns.<locals>._ignore"

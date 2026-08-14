@@ -6,8 +6,8 @@ import (
 	gotime "time"
 
 	"github.com/spachava753/dyson/internal/xctx"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
 )
 
 func (m moduleTime) now(fn string) (gotime.Time, error) {

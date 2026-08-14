@@ -8,8 +8,8 @@ import (
 	"slices"
 
 	"github.com/spachava753/dyson/internal/xctx"
-	"go.starlark.net/starlark"
-	"go.starlark.net/syntax"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/syntax"
 )
 
 var errSphereClosed = errors.New("dyson: sphere is closed")

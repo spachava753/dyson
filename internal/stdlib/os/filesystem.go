@@ -9,11 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spachava753/dyson/internal/pybytes"
 	"github.com/spachava753/dyson/internal/stdlibfs"
 	"github.com/spachava753/dyson/internal/xos"
+	"github.com/spachava753/starlarkx/starlark"
 	"github.com/spf13/afero"
-	"go.starlark.net/starlark"
 )
 
 // FileSystem implements filesystem-related os module functions using explicit host capabilities.
@@ -654,7 +653,7 @@ func (f FileSystem) read(thread *starlark.Thread, fn *starlark.Builtin, args sta
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
-	return pybytes.New(buf[:read]), nil
+	return starlark.Bytes(string(buf[:read])), nil
 }
 
 func (f FileSystem) write(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {

@@ -10,10 +10,10 @@ import (
 	"github.com/spachava753/dyson/internal/chunkedfile"
 	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
 	"github.com/spachava753/dyson/internal/stdlibfs"
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
-	"go.starlark.net/starlarktest"
-	"go.starlark.net/syntax"
+	"github.com/spachava753/starlarkx/starlark"
+	"github.com/spachava753/starlarkx/starlarkstruct"
+	"github.com/spachava753/starlarkx/starlarktest"
+	"github.com/spachava753/starlarkx/syntax"
 )
 
 func TestGlobTestdata(t *testing.T) {

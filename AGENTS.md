@@ -8,8 +8,8 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 
 - `eval.go` owns the incremental Starlark session, explicit `SphereSource` composition, globals, exact module loading without ambient fallback, evaluation-context propagation and public lookup, evaluation cancellation, and terminal `Sphere.Close` cleanup.
 - `stdlib.go` owns the closable `Stdlib` assembled for `Sphere` and for callers using their own Starlark thread and loader.
-- `internal/pybytes/` owns Python-compatible methods added to native Starlark bytes. It intentionally depends on the pinned Starlark runtime's internal bytes method table because the runtime has no public extension seam.
-- `internal/stdlib/builtins/` owns Python-inspired globals such as `open` and the registry of live global file handles. Explicit `file.close()` unregisters a handle; `Sphere.Close` closes whatever remains.
+- The pinned StarlarkX runtime owns Python-compatible native-language behavior such as `bytes.decode`; Dyson does not patch private runtime method tables.
+- `internal/stdlib/builtins/` owns Python-inspired globals such as `open`, incremental UTF-8 decoding for bounded text reads, and the registry of live global file handles. Explicit `file.close()` unregisters a handle; `Sphere.Close` closes whatever remains.
 - `internal/stdlibfs/` owns the concrete rooted Afero host backend, the read-only `io/fs` adapter, shared Afero helpers, and the descriptor table closed by `Sphere.Close`. `StdlibConfig.FS` is directly `afero.Fs`; do not introduce a second filesystem interface. Keep environment, process, and platform concerns out of this package.
 - `internal/xhttp/` owns the normalized HTTP client seam and explicit host-network adapter used by stdlib modules. Keep protocol-independent network policy out of stdlib package implementations.
 - `internal/xos/` owns host OS seams that are not filesystem- or network-specific, such as environment, process, command execution, working-directory, and platform capabilities.
@@ -20,7 +20,7 @@ See [README.md](./README.md) for the user-facing overview and [discovery.md](./d
 
 - This module targets Go `1.26.4`. Use modern Go idioms available up to that version.
 - Keep changes small and direct. Avoid unnecessary abstractions unless they clarify a real seam.
-- Keep Dyson byte results as native `starlark.Bytes`; route construction through `internal/pybytes` so Python-compatible methods are registered without changing bytes identity or comparison semantics.
+- Keep Dyson byte results as native `starlark.Bytes`; Python-compatible native methods belong in the pinned StarlarkX runtime rather than Dyson wrappers or private runtime patches.
 - `NewSphere` installs only explicit sources. Use `ModuleSet` and `GlobalSet` for custom bindings, a full `Stdlib` for the complete compatibility surface, or `Stdlib.Select` for an exact subset.
 - Global `open` uses ordinary synchronous `afero.File` reads. Do not add context-cancellation adapters to file operations; configured Afero backends should remain direct filesystem implementations.
 - Symlink-sensitive behavior requires `afero.Lstater` to report that it actually used `lstat`; never fall back to link-following `Stat`. Standard `io/fs.FS` values must use `dyson.FromIOFS` so leading `./` paths, `fs.ReadDirFS`, descriptor flags, and `fs.ReadLinkFS` are handled correctly. `shutil.rmtree` delegates descendant deletion to `afero.Fs.RemoveAll`, so document and test the selected backend's symlink guarantees.

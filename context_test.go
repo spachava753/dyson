@@ -6,7 +6,7 @@ import (
 
 	"github.com/nalgeon/be"
 	"github.com/spachava753/dyson"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 type evaluationContextKey struct{}

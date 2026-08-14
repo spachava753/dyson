@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 func compileRegex(fn string, text regexText, flags int) (*regexp.Regexp, []string, *starlark.Dict, error) {

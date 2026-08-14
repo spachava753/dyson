@@ -5,7 +5,7 @@ import (
 	"math"
 	gotime "time"
 
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 // gmtimeBuiltin implements time.gmtime, converting Unix seconds to a UTC
