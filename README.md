@@ -151,6 +151,22 @@ text = data.decode("utf-8", errors="strict")
 
 `bytes.decode` is provided natively by StarlarkX. It supports UTF-8 and its common aliases; `errors` supports `"strict"` (the default), `"ignore"`, and `"replace"` for malformed input. Unsupported modes, encodings, error handlers encountered during decoding, empty or missing paths, directory paths, and reads from closed files fail with operation and path context where applicable. Empty filenames fail before filesystem-specific root normalization.
 
+### JSON
+
+The `json` module initially exposes only `dumps(obj)` and `load(fp)`. `dumps` supports JSON scalars, strings, lists, tuples, and dictionaries with string keys, and emits compact JSON with deterministically sorted object keys. `load` calls `fp.read()` once, accepts either text or bytes, and returns ordinary Starlark dictionaries, lists, and scalar values. CPython's optional encoder and decoder configuration is intentionally not included yet.
+
+Starlark reserves `load` as a keyword even in attribute position, so `json.load(...)` does not parse. Access that member through `getattr`; `dumps` remains available through ordinary attribute syntax:
+
+```python
+load("json.star", "json")
+
+file = open("document.json")
+document = getattr(json, "load")(file)
+file.close()
+
+encoded = json.dumps({"enabled": True, "items": [1, 2, 3]})
+```
+
 ### HTTP requests
 
 The `requests` module exposes `request`, `get`, `options`, `head`, `post`, `put`, `patch`, and `delete`:

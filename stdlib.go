@@ -8,6 +8,7 @@ import (
 	stdlibbuiltins "github.com/spachava753/dyson/internal/stdlib/builtins"
 	stdlibglob "github.com/spachava753/dyson/internal/stdlib/glob"
 	stdlibgrp "github.com/spachava753/dyson/internal/stdlib/grp"
+	stdlibjson "github.com/spachava753/dyson/internal/stdlib/json"
 	stdlibos "github.com/spachava753/dyson/internal/stdlib/os"
 	stdlibpwd "github.com/spachava753/dyson/internal/stdlib/pwd"
 	stdlibre "github.com/spachava753/dyson/internal/stdlib/re"
@@ -146,6 +147,9 @@ func NewStdlib(config StdlibConfig) *Stdlib {
 			},
 			stdlibgrp.ModuleName + ".star": {
 				stdlibgrp.ModuleName: stdlibgrp.Module,
+			},
+			stdlibjson.ModuleName + ".star": {
+				stdlibjson.ModuleName: stdlibjson.Module,
 			},
 			stdlibos.ModuleName + ".star": {
 				stdlibos.ModuleName: osModule,

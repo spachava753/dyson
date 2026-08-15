@@ -7,6 +7,7 @@
 - No `try`/`except`/`finally`, `raise`, or custom exception classes
 - Starlark file top levels do not allow `if` statements; assert behavior from Go tests or inside helper functions
 - A `load` statement imports named globals from the host-provided module environment; bare `load("re.star")` is invalid, so use explicit namespace imports like `load("re.star", "re")`; direct imports like `load("re.star", "compile")` are intentionally unsupported
+- `load` remains a reserved token in attribute position, so a module member named `load` must be called through `getattr(module, "load")` rather than `module.load`
 - REPL chunks need `syntax.FileOptions.LoadBindsGlobally` enabled if loaded symbols should persist in session globals and be visible to later chunks
 - Evaluation errors abort execution; Go host receives `*starlark.EvalError`
 - Use `EvalError.Backtrace()` for script stack traces
