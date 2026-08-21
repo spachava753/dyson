@@ -120,6 +120,12 @@ load("os.star", "os")
 os.getenv("PATH")  ### "os.getenv: environment operations are not configured"
 
 ---
+# The environment mapping also fails closed when its host domain is unavailable.
+load("os.star", "os")
+
+os.environ.get("PATH")  ### "os.environ.get: environment operations are not configured"
+
+---
 # Command execution is a separate host capability from process metadata.
 load("assert.star", "assert")
 load("os.star", "os")

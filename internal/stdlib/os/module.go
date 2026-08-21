@@ -110,7 +110,7 @@ func makePrimitiveModule(config ModuleConfig) *starlarkstruct.Module {
 			"kill":          starlark.NewBuiltin(ModuleName+".kill", process.kill),
 			"system":        starlark.NewBuiltin(ModuleName+".system", process.system),
 
-			"environ":  starlark.NewBuiltin(ModuleName+".environ", environment.environ),
+			"environ":  newEnvironValue(environment),
 			"getenv":   starlark.NewBuiltin(ModuleName+".getenv", environment.getenv),
 			"putenv":   starlark.NewBuiltin(ModuleName+".putenv", environment.putenv),
 			"unsetenv": starlark.NewBuiltin(ModuleName+".unsetenv", environment.unsetenv),

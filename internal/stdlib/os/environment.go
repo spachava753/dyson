@@ -15,6 +15,94 @@ type Environment struct {
 	platform xos.Platform
 }
 
+var environMethods = map[string]*starlark.Builtin{
+	"get": starlark.NewBuiltin(ModuleName+".environ.get", environGet),
+}
+
+// environValue provides the shared callable and attribute surface for
+// os.environ. A configured environment wraps it with mappedEnvironValue.
+type environValue struct {
+	environment Environment
+}
+
+type mappedEnvironValue struct {
+	*environValue
+}
+
+func newEnvironValue(environment Environment) starlark.Value {
+	value := &environValue{environment: environment}
+	if environment.env == nil {
+		return value
+	}
+	return &mappedEnvironValue{environValue: value}
+}
+
+func (e *environValue) Name() string { return ModuleName + ".environ" }
+
+func (e *environValue) String() string { return "<os.environ>" }
+
+func (e *environValue) Type() string { return "os._Environ" }
+
+// Freeze leaves the configured host capability live; environValue contains no
+// mutable Starlark state of its own.
+func (e *environValue) Freeze() {}
+
+func (e *environValue) Truth() starlark.Bool { return starlark.True }
+
+func (e *environValue) Hash() (uint32, error) {
+	return 0, fmt.Errorf("unhashable: %s", e.Type())
+}
+
+func (e *environValue) Attr(name string) (starlark.Value, error) {
+	if method, ok := environMethods[name]; ok {
+		return method.BindReceiver(e), nil
+	}
+	return nil, nil
+}
+
+func (e *environValue) AttrNames() []string { return []string{"get"} }
+
+// CallInternal preserves os.environ() as an explicit dictionary snapshot.
+func (e *environValue) CallInternal(_ *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	if err := starlark.UnpackArgs(e.Name(), args, kwargs); err != nil {
+		return nil, err
+	}
+	return e.environment.snapshot(e.Name())
+}
+
+// Get performs live indexing and membership lookups against the configured
+// environment instead of an earlier enumeration snapshot.
+func (e *mappedEnvironValue) Get(key starlark.Value) (starlark.Value, bool, error) {
+	name, ok := key.(starlark.String)
+	if !ok {
+		return nil, false, fmt.Errorf("%s: key must be string, got %s", e.Name(), key.Type())
+	}
+	value, found := e.environment.env.LookupEnv(string(name))
+	if !found {
+		return nil, false, nil
+	}
+	return starlark.String(value), true, nil
+}
+
+// Iterate snapshots keys so one traversal remains stable if the host
+// environment changes while Starlark consumes the iterator.
+func (e *mappedEnvironValue) Iterate() starlark.Iterator {
+	items := environmentItems(e.environment.env)
+	keys := make([]starlark.Value, len(items))
+	for i, item := range items {
+		keys[i] = item[0]
+	}
+	return starlark.NewList(keys).Iterate()
+}
+
+func (e *mappedEnvironValue) Items() []starlark.Tuple {
+	return environmentItems(e.environment.env)
+}
+
+func (e *mappedEnvironValue) Len() int {
+	return len(environmentItems(e.environment.env))
+}
+
 func (f Environment) configuredEnv(fn string) (xos.Env, error) {
 	if f.env == nil {
 		return nil, fmt.Errorf("%s: environment operations are not configured", fn)
@@ -58,23 +146,57 @@ func (f Environment) getExecPath(thread *starlark.Thread, fn *starlark.Builtin, 
 	return starlark.NewList(items), nil
 }
 
-func (f Environment) environ(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	if _, err := none(fn.Name(), args, kwargs); err != nil {
-		return nil, err
-	}
-	fsys, err := f.configuredEnv(fn.Name())
+func (f Environment) snapshot(fn string) (starlark.Value, error) {
+	fsys, err := f.configuredEnv(fn)
 	if err != nil {
 		return nil, err
 	}
-	environ := fsys.Environ()
-	dict := starlark.NewDict(len(environ))
-	for _, kv := range environ {
-		key, value, _ := strings.Cut(kv, "=")
-		if err := dict.SetKey(starlark.String(key), starlark.String(value)); err != nil {
+	items := environmentItems(fsys)
+	dict := starlark.NewDict(len(items))
+	for _, item := range items {
+		if err := dict.SetKey(item[0], item[1]); err != nil {
 			return nil, err
 		}
 	}
 	return dict, nil
+}
+
+func environmentItems(env xos.Env) []starlark.Tuple {
+	environ := env.Environ()
+	items := make([]starlark.Tuple, 0, len(environ))
+	indices := make(map[string]int, len(environ))
+	for _, entry := range environ {
+		key, value, _ := strings.Cut(entry, "=")
+		if index, ok := indices[key]; ok {
+			items[index][1] = starlark.String(value)
+			continue
+		}
+		indices[key] = len(items)
+		items = append(items, starlark.Tuple{starlark.String(key), starlark.String(value)})
+	}
+	return items
+}
+
+// environGet performs a fresh capability lookup so putenv and unsetenv changes
+// are visible without rebuilding the module or a snapshot.
+func environGet(_ *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	environ, ok := fn.Receiver().(*environValue)
+	if !ok {
+		return nil, fmt.Errorf("%s: receiver is %T, want os._Environ", fn.Name(), fn.Receiver())
+	}
+	var key string
+	var def starlark.Value = starlark.None
+	if err := starlark.UnpackArgs(fn.Name(), args, kwargs, "key", &key, "default?", &def); err != nil {
+		return nil, err
+	}
+	fsys, err := environ.environment.configuredEnv(fn.Name())
+	if err != nil {
+		return nil, err
+	}
+	if value, ok := fsys.LookupEnv(key); ok {
+		return starlark.String(value), nil
+	}
+	return def, nil
 }
 
 func (f Environment) getenv(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
